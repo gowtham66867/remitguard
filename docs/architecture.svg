@@ -1,0 +1,139 @@
+<svg viewBox="0 0 820 640" xmlns="http://www.w3.org/2000/svg" font-family="system-ui, -apple-system, sans-serif" font-size="12">
+  <rect width="820" height="640" fill="#0f1117" rx="12"/>
+
+  <!-- Title -->
+  <text x="410" y="32" text-anchor="middle" fill="#e8eaf0" font-size="16" font-weight="700">RCM Platform</text>
+  <text x="410" y="50" text-anchor="middle" fill="#6b7280" font-size="11">Behavioral Health Revenue Cycle Operating System</text>
+
+  <!-- Layer labels -->
+  <text x="18" y="95"  fill="#6b7280" font-size="10" font-weight="600" letter-spacing="1">INGESTION</text>
+  <text x="18" y="210" fill="#6b7280" font-size="10" font-weight="600" letter-spacing="1">MULTI-AGENT PIPELINE</text>
+  <text x="18" y="390" fill="#6b7280" font-size="10" font-weight="600" letter-spacing="1">API ROUTES</text>
+  <text x="18" y="500" fill="#6b7280" font-size="10" font-weight="600" letter-spacing="1">PERSISTENCE</text>
+  <text x="18" y="585" fill="#6b7280" font-size="10" font-weight="600" letter-spacing="1">FEEDBACK LOOP</text>
+
+  <!-- ── ROW 1: INGESTION ── -->
+  <rect x="80"  y="65" width="150" height="52" rx="8" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="155" y="86"  text-anchor="middle" fill="#93c5fd" font-weight="600">PDF Upload</text>
+  <text x="155" y="101" text-anchor="middle" fill="#60a5fa" font-size="10">multipart / base64 WS</text>
+  <text x="155" y="114" text-anchor="middle" fill="#475569" font-size="10">EOBs + ledger CSV</text>
+
+  <rect x="260" y="65" width="130" height="52" rx="8" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="325" y="86"  text-anchor="middle" fill="#93c5fd" font-weight="600">Ledger CSV</text>
+  <text x="325" y="101" text-anchor="middle" fill="#60a5fa" font-size="10">claim &#x2192; expected $</text>
+  <text x="325" y="114" text-anchor="middle" fill="#475569" font-size="10">reconciliation input</text>
+
+  <rect x="420" y="65" width="150" height="52" rx="8" fill="#1a2e1a" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="495" y="86"  text-anchor="middle" fill="#86efac" font-weight="600">patterns.json</text>
+  <text x="495" y="101" text-anchor="middle" fill="#4ade80" font-size="10">6 payer tags</text>
+  <text x="495" y="114" text-anchor="middle" fill="#475569" font-size="10">anthem · cigna · aetna&#x2026;</text>
+
+  <rect x="600" y="65" width="140" height="52" rx="8" fill="#2d1b4e" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="670" y="86"  text-anchor="middle" fill="#c4b5fd" font-weight="600">WS /ws/pipeline</text>
+  <text x="670" y="101" text-anchor="middle" fill="#a78bfa" font-size="10">real-time phase events</text>
+  <text x="670" y="114" text-anchor="middle" fill="#475569" font-size="10">NEW &#x2666;</text>
+
+  <!-- ── ORCHESTRATOR ── -->
+  <rect x="80" y="145" width="660" height="40" rx="8" fill="#1c1c2e" stroke="#6366f1" stroke-width="2"/>
+  <text x="410" y="160" text-anchor="middle" fill="#a5b4fc" font-weight="700" font-size="13">Orchestrator</text>
+  <text x="410" y="177" text-anchor="middle" fill="#6366f1" font-size="10">4-stage coordinator · escalation rules A&#x2013;D · run() + run_batch() · emit() streaming callbacks</text>
+
+  <!-- Ingestion → Orchestrator dashed lines -->
+  <line x1="155" y1="117" x2="200" y2="145" stroke="#3b82f6" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="325" y1="117" x2="350" y2="145" stroke="#3b82f6" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="495" y1="117" x2="450" y2="145" stroke="#22c55e" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="670" y1="117" x2="600" y2="145" stroke="#a78bfa" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- ── ROW 2: AGENTS ── -->
+  <rect x="80"  y="225" width="145" height="80" rx="8" fill="#1c2030" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="152" y="244" text-anchor="middle" fill="#7dd3fc" font-weight="700">EOBAgent</text>
+  <text x="152" y="260" text-anchor="middle" fill="#38bdf8" font-size="10">3-strategy extraction</text>
+  <text x="152" y="274" text-anchor="middle" fill="#475569" font-size="10">pdfplumber &#x2192; layout</text>
+  <text x="152" y="288" text-anchor="middle" fill="#475569" font-size="10">&#x2192; char fallback</text>
+  <text x="152" y="302" text-anchor="middle" fill="#0ea5e9" font-size="10">conf score 0&#x2013;1</text>
+
+  <rect x="250" y="225" width="145" height="80" rx="8" fill="#1c2030" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="322" y="244" text-anchor="middle" fill="#fcd34d" font-weight="700">RecoupmentAgent</text>
+  <text x="322" y="260" text-anchor="middle" fill="#f59e0b" font-size="10">detect + self-validate</text>
+  <text x="322" y="274" text-anchor="middle" fill="#475569" font-size="10">&#xb1;3 line context window</text>
+  <text x="322" y="288" text-anchor="middle" fill="#475569" font-size="10">max 2 re-examine loops</text>
+  <text x="322" y="302" text-anchor="middle" fill="#f59e0b" font-size="10">ledger reconciliation</text>
+
+  <rect x="420" y="225" width="145" height="80" rx="8" fill="#1c2030" stroke="#10b981" stroke-width="1.5"/>
+  <text x="492" y="244" text-anchor="middle" fill="#6ee7b7" font-weight="700">ValidatorAgent</text>
+  <text x="492" y="260" text-anchor="middle" fill="#10b981" font-size="10">5 sanity checks</text>
+  <text x="492" y="274" text-anchor="middle" fill="#475569" font-size="10">Levenshtein dedup</text>
+  <text x="492" y="288" text-anchor="middle" fill="#475569" font-size="10">calibration-adjusted</text>
+  <text x="492" y="302" text-anchor="middle" fill="#10b981" font-size="10">threshold per payer &#x2666;</text>
+
+  <rect x="590" y="225" width="150" height="80" rx="8" fill="#1c2030" stroke="#f43f5e" stroke-width="1.5"/>
+  <text x="665" y="244" text-anchor="middle" fill="#fda4af" font-weight="700">EscalationAgent</text>
+  <text x="665" y="260" text-anchor="middle" fill="#f43f5e" font-size="10">rules A&#x2013;D auto-gate</text>
+  <text x="665" y="274" text-anchor="middle" fill="#475569" font-size="10">&gt;$10K large_amount</text>
+  <text x="665" y="288" text-anchor="middle" fill="#475569" font-size="10">generic+$5K pattern</text>
+  <text x="665" y="302" text-anchor="middle" fill="#f43f5e" font-size="10">HumanReview queue</text>
+
+  <!-- Agent flow arrows -->
+  <defs>
+    <marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#4b5563"/>
+    </marker>
+    <marker id="arr-green" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#22c55e"/>
+    </marker>
+  </defs>
+  <line x1="225" y1="265" x2="250" y2="265" stroke="#4b5563" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="395" y1="265" x2="420" y2="265" stroke="#4b5563" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="565" y1="265" x2="590" y2="265" stroke="#4b5563" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="200" y1="185" x2="152" y2="225" stroke="#6366f1" stroke-width="1" stroke-dasharray="3,3"/>
+
+  <!-- ── ROW 3: API ROUTES ── -->
+  <rect x="80"  y="400" width="110" height="42" rx="6" fill="#1a1a2e" stroke="#6366f1" stroke-width="1"/>
+  <text x="135" y="417" text-anchor="middle" fill="#a5b4fc" font-weight="600" font-size="11">POST /analyze</text>
+  <text x="135" y="432" text-anchor="middle" fill="#475569" font-size="10">recoupment</text>
+
+  <rect x="210" y="400" width="110" height="42" rx="6" fill="#1a1a2e" stroke="#6366f1" stroke-width="1"/>
+  <text x="265" y="417" text-anchor="middle" fill="#a5b4fc" font-weight="600" font-size="11">GET/POST /sca</text>
+  <text x="265" y="432" text-anchor="middle" fill="#475569" font-size="10">SCA lifecycle</text>
+
+  <rect x="340" y="400" width="120" height="42" rx="6" fill="#1a1a2e" stroke="#6366f1" stroke-width="1"/>
+  <text x="400" y="417" text-anchor="middle" fill="#a5b4fc" font-weight="600" font-size="11">GET /enrollment</text>
+  <text x="400" y="432" text-anchor="middle" fill="#475569" font-size="10">ERA / EFT status</text>
+
+  <rect x="480" y="400" width="120" height="42" rx="6" fill="#1a1a2e" stroke="#6366f1" stroke-width="1"/>
+  <text x="540" y="417" text-anchor="middle" fill="#a5b4fc" font-weight="600" font-size="11">GET /review</text>
+  <text x="540" y="432" text-anchor="middle" fill="#475569" font-size="10">human queue</text>
+
+  <rect x="620" y="400" width="120" height="42" rx="6" fill="#2d1b4e" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="680" y="417" text-anchor="middle" fill="#c4b5fd" font-weight="600" font-size="11">WS /ws/pipeline</text>
+  <text x="680" y="432" text-anchor="middle" fill="#7c3aed" font-size="10">NEW &#x2666;</text>
+
+  <!-- Agent → Routes dashed lines -->
+  <line x1="152" y1="305" x2="135" y2="400" stroke="#38bdf8" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="322" y1="305" x2="265" y2="400" stroke="#f59e0b" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="665" y1="305" x2="540" y2="400" stroke="#f43f5e" stroke-width="1" stroke-dasharray="3,3"/>
+  <line x1="670" y1="185" x2="680" y2="400" stroke="#a78bfa" stroke-width="1" stroke-dasharray="3,3"/>
+
+  <!-- ── ROW 4: PERSISTENCE ── -->
+  <rect x="80" y="515" width="660" height="40" rx="8" fill="#111827" stroke="#374151" stroke-width="1.5"/>
+  <text x="270" y="532" text-anchor="middle" fill="#9ca3af" font-size="11">SQLite (Cloud Run &#x2192; swap for Cloud SQL)</text>
+  <text x="530" y="532" text-anchor="middle" fill="#6b7280" font-size="10">recoupment_results · recoupment_flags · scas · era_enrollments · eft_enrollments · human_reviews</text>
+  <text x="670" y="548" text-anchor="middle" fill="#22c55e" font-size="10">feedback_stats &#x2666;</text>
+  <line x1="410" y1="442" x2="410" y2="515" stroke="#374151" stroke-width="1" stroke-dasharray="3,3"/>
+
+  <!-- ── ROW 5: FEEDBACK LOOP ── -->
+  <rect x="80"  y="595" width="310" height="32" rx="6" fill="#1a2e1a" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="235" y="609" text-anchor="middle" fill="#86efac" font-size="11" font-weight="600">FeedbackCalibrator (NEW &#x2666;)</text>
+  <text x="235" y="622" text-anchor="middle" fill="#4ade80" font-size="10">approve/dismiss &#x2192; upserts FeedbackStats &#x2192; adjusts per-payer threshold</text>
+
+  <rect x="420" y="595" width="320" height="32" rx="6" fill="#1a2e1a" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="580" y="609" text-anchor="middle" fill="#86efac" font-size="11" font-weight="600">GET /api/review/calibration (NEW &#x2666;)</text>
+  <text x="580" y="622" text-anchor="middle" fill="#4ade80" font-size="10">moat dashboard · FPR per payer · threshold deltas · recommendation</text>
+
+  <!-- Feedback loop arrow back to ValidatorAgent -->
+  <path d="M 235 595 Q 235 560 492 560 Q 492 530 492 305" stroke="#22c55e" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#arr-green)"/>
+
+  <!-- Legend -->
+  <rect x="622" y="560" width="12" height="12" rx="2" fill="#2d1b4e" stroke="#a78bfa" stroke-width="1"/>
+  <text x="640" y="571" fill="#a78bfa" font-size="10">= New this session</text>
+</svg>

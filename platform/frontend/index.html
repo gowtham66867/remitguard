@@ -1,0 +1,1178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RemitGuard — RCM Operations Platform</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0f1117;
+    --card:      #1a1d27;
+    --card2:     #21253a;
+    --border:    #2a2e42;
+    --border2:   #363b55;
+    --text:      #e8eaf0;
+    --muted:     #7b82a0;
+    --accent:    #6c63ff;
+    --accent-d:  #4f47cc;
+    --danger:    #ff4d6d;
+    --danger-d:  #cc2244;
+    --warn:      #ffa94d;
+    --warn-d:    #cc7a22;
+    --success:   #51cf66;
+    --success-d: #2ea84c;
+    --info:      #339af0;
+    --radius:    8px;
+    --radius-lg: 12px;
+  }
+
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.5; }
+
+  /* ── NAV ── */
+  nav {
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 28px; height: 56px;
+    background: var(--card); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .nav-logo { font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: -.3px; }
+  .nav-sub  { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .nav-sep  { flex: 1; }
+  .nav-pill {
+    font-size: 11px; font-weight: 600; letter-spacing: .4px;
+    background: color-mix(in srgb, var(--success) 15%, transparent);
+    color: var(--success); border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
+    padding: 3px 10px; border-radius: 20px;
+  }
+  .nav-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); display: inline-block; margin-right: 5px; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* ── TABS ── */
+  .tab-bar {
+    display: flex; gap: 2px; padding: 12px 28px 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    position: sticky; top: 56px; z-index: 99;
+  }
+  .tab-btn {
+    padding: 8px 18px; border-radius: var(--radius) var(--radius) 0 0;
+    background: transparent; border: 1px solid transparent; border-bottom: none;
+    color: var(--muted); cursor: pointer; font-size: 13px; font-weight: 500;
+    transition: color .15s, background .15s;
+    position: relative; bottom: -1px;
+  }
+  .tab-btn:hover { color: var(--text); background: var(--card2); }
+  .tab-btn.active {
+    color: var(--text); background: var(--card);
+    border-color: var(--border); border-bottom-color: var(--card);
+  }
+  .tab-badge {
+    display: inline-block; margin-left: 6px;
+    background: var(--danger); color: #fff;
+    font-size: 10px; font-weight: 700; border-radius: 10px;
+    padding: 1px 6px; vertical-align: middle;
+  }
+
+  /* ── CONTENT ── */
+  .content { padding: 24px 28px; max-width: 1400px; }
+  .pane { display: none; }
+  .pane.active { display: block; }
+
+  /* ── SECTION HEADERS ── */
+  .section-header {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+  }
+  .section-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+  .section-line { flex: 1; height: 1px; background: var(--border); }
+
+  /* ── CARDS ── */
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 16px 18px;
+  }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-bottom: 28px; }
+  .card-sm { padding: 14px 16px; }
+
+  /* Alert cards */
+  .alert-card { border-left: 3px solid; }
+  .alert-danger { border-left-color: var(--danger); background: color-mix(in srgb, var(--danger) 6%, var(--card)); }
+  .alert-warn   { border-left-color: var(--warn);   background: color-mix(in srgb, var(--warn)   6%, var(--card)); }
+  .alert-info   { border-left-color: var(--info);   background: color-mix(in srgb, var(--info)   6%, var(--card)); }
+
+  .alert-amount { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .alert-danger .alert-amount { color: var(--danger); }
+  .alert-warn   .alert-amount { color: var(--warn); }
+  .alert-info   .alert-amount { color: var(--info); }
+
+  .alert-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
+  .alert-detail { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .alert-title { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+
+  /* ── SUMMARY BAR ── */
+  .summary-bar {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px; margin-bottom: 24px;
+  }
+  .stat-box {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 16px 18px;
+  }
+  .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; }
+  .stat-val   { font-size: 26px; font-weight: 700; }
+  .stat-val.danger  { color: var(--danger); }
+  .stat-val.success { color: var(--success); }
+  .stat-val.warn    { color: var(--warn); }
+  .stat-val.accent  { color: var(--accent); }
+
+  /* ── DROPZONE ── */
+  .drop-zone {
+    border: 2px dashed var(--border2); border-radius: var(--radius-lg);
+    background: var(--card); padding: 40px 24px;
+    text-align: center; transition: border-color .2s, background .2s;
+    cursor: pointer; margin-bottom: 16px;
+  }
+  .drop-zone.over, .drop-zone:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--card)); }
+  .drop-zone-icon { font-size: 36px; margin-bottom: 10px; opacity: .5; }
+  .drop-zone-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .drop-zone-sub   { font-size: 12px; color: var(--muted); }
+  .file-list { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+  .file-chip {
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 10px; font-size: 12px; color: var(--muted);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .file-chip-remove { cursor: pointer; color: var(--danger); font-weight: 700; line-height: 1; }
+
+  /* ── BUTTONS ── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border-radius: var(--radius); border: none;
+    font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .15s, transform .1s;
+  }
+  .btn:active { transform: scale(.98); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-d); }
+  .btn-secondary { background: var(--card2); border: 1px solid var(--border2); color: var(--text); }
+  .btn-secondary:hover { border-color: var(--border2); background: #2a2f48; }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-danger:hover { background: var(--danger-d); }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-icon { padding: 5px 8px; font-size: 16px; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* ── RESULT CARDS ── */
+  .result-card { margin-bottom: 10px; }
+  .result-card .rc-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .rc-filename { font-size: 13px; font-weight: 600; }
+  .rc-status-badge {
+    font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px;
+    letter-spacing: .3px;
+  }
+  .badge-clean   { background: color-mix(in srgb, var(--success) 20%, transparent); color: var(--success); border: 1px solid color-mix(in srgb,var(--success) 35%, transparent); }
+  .badge-flagged { background: color-mix(in srgb, var(--danger)  20%, transparent); color: var(--danger);  border: 1px solid color-mix(in srgb,var(--danger)  35%, transparent); }
+  .badge-warn    { background: color-mix(in srgb, var(--warn)    20%, transparent); color: var(--warn);    border: 1px solid color-mix(in srgb,var(--warn)    35%, transparent); }
+  .badge-info    { background: color-mix(in srgb, var(--info)    20%, transparent); color: var(--info);    border: 1px solid color-mix(in srgb,var(--info)    35%, transparent); }
+  .badge-gray    { background: color-mix(in srgb, var(--muted)   20%, transparent); color: var(--muted);   border: 1px solid color-mix(in srgb,var(--muted)   35%, transparent); }
+
+  .rc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+  .rc-field { background: var(--bg); border-radius: 6px; padding: 8px 10px; }
+  .rc-field-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 3px; }
+  .rc-field-val   { font-size: 13px; font-weight: 600; }
+  .rc-recoup-text {
+    margin-top: 10px; padding: 10px 12px;
+    background: color-mix(in srgb, var(--danger) 8%, var(--bg));
+    border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
+    border-radius: 6px; font-size: 12px; color: var(--text); font-style: italic;
+  }
+
+  /* ── TABLE ── */
+  .tbl-wrap { overflow-x: auto; border-radius: var(--radius-lg); border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    background: var(--card2); padding: 10px 14px; text-align: left;
+    font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted);
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--card2); }
+  tbody td { padding: 10px 14px; vertical-align: middle; }
+
+  /* ── PROGRESS BAR ── */
+  .progress-wrap { display: flex; align-items: center; gap: 8px; }
+  .progress-bar  { flex: 1; height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; min-width: 80px; }
+  .progress-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width .4s; }
+  .progress-fill.warn   { background: var(--warn); }
+  .progress-fill.danger { background: var(--danger); }
+  .progress-label { font-size: 12px; white-space: nowrap; }
+
+  /* ── INLINE FORM ── */
+  .inline-form {
+    background: var(--card2); border: 1px solid var(--border2);
+    border-radius: var(--radius-lg); padding: 20px 22px; margin-bottom: 16px;
+  }
+  .form-title { font-size: 14px; font-weight: 600; margin-bottom: 16px; }
+  .form-grid  { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .form-field { display: flex; flex-direction: column; gap: 5px; }
+  label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  input[type=text], input[type=number], input[type=date], select {
+    background: var(--card); border: 1px solid var(--border2); border-radius: var(--radius);
+    color: var(--text); padding: 7px 10px; font-size: 13px; outline: none;
+    transition: border-color .15s;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  select option { background: var(--card); }
+
+  /* ── SUB-TABS ── */
+  .sub-tab-bar { display: flex; gap: 6px; margin-bottom: 20px; }
+  .sub-tab-btn {
+    padding: 6px 16px; border-radius: 20px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: all .15s;
+  }
+  .sub-tab-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .sub-tab-btn:hover:not(.active) { border-color: var(--border2); color: var(--text); }
+
+  /* ── TOOLBAR ── */
+  .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .toolbar select { min-width: 160px; }
+
+  /* ── TOAST ── */
+  #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+  .toast {
+    background: var(--card2); border: 1px solid var(--border2);
+    border-radius: var(--radius-lg); padding: 12px 16px;
+    font-size: 13px; color: var(--text); min-width: 260px; max-width: 360px;
+    pointer-events: all; display: flex; align-items: flex-start; gap: 10px;
+    animation: slideIn .25s ease;
+  }
+  .toast.error   { border-left: 3px solid var(--danger); }
+  .toast.success { border-left: 3px solid var(--success); }
+  .toast.warn    { border-left: 3px solid var(--warn); }
+  .toast-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .toast-msg  { flex: 1; }
+  .toast-close { cursor: pointer; color: var(--muted); font-size: 16px; }
+  @keyframes slideIn { from { opacity:0; transform: translateX(20px); } to { opacity:1; transform: translateX(0); } }
+  @keyframes fadeOut { to { opacity:0; transform: translateX(20px); } }
+
+  /* ── SPINNER ── */
+  .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── EMPTY STATE ── */
+  .empty { text-align: center; padding: 48px 24px; color: var(--muted); }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; opacity: .4; }
+  .empty-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; color: var(--text); opacity: .5; }
+  .empty-sub   { font-size: 13px; }
+
+  /* ── LOADING OVERLAY ── */
+  .loading-row td { text-align: center; padding: 36px; color: var(--muted); }
+
+  /* ── VISIT CTRL ── */
+  .visit-ctrl { display: flex; align-items: center; gap: 8px; }
+  .visit-num  { font-weight: 600; min-width: 24px; text-align: center; }
+
+  /* ── DEADLINE HIGHLIGHT ── */
+  .deadline-soon { color: var(--danger); font-weight: 600; }
+
+  .flex-row { display: flex; align-items: center; gap: 10px; }
+  .spacer   { flex: 1; }
+
+  .hidden { display: none !important; }
+
+  /* ── RECOUP UPLOAD SECTION ── */
+  .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  @media (max-width: 800px) { .upload-grid { grid-template-columns: 1fr; } }
+
+  .ledger-zone {
+    border: 1.5px dashed var(--border); border-radius: var(--radius-lg);
+    background: var(--card); padding: 24px; text-align: center; cursor: pointer;
+    transition: border-color .2s;
+  }
+  .ledger-zone:hover { border-color: var(--success); }
+  .ledger-zone-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .ledger-zone-sub   { font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div>
+    <div class="nav-logo">RemitGuard</div>
+    <div class="nav-sub">RCM Operations Platform</div>
+  </div>
+  <div class="nav-sep"></div>
+  <div class="nav-pill" id="health-pill">
+    <span class="nav-dot"></span>Connecting…
+  </div>
+</nav>
+
+<!-- TABS -->
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="alerts">
+    ⚡ Alerts <span class="tab-badge hidden" id="alerts-badge">0</span>
+  </button>
+  <button class="tab-btn" data-tab="recoupment">📄 Recoupment</button>
+  <button class="tab-btn" data-tab="sca">📋 SCA Tracker</button>
+  <button class="tab-btn" data-tab="enrollment">🏦 ERA/EFT Enrollment</button>
+</div>
+
+<div class="content">
+
+  <!-- ══════════════ ALERTS TAB ══════════════ -->
+  <div class="pane active" id="pane-alerts">
+
+    <div class="section-header" style="margin-top:4px">
+      <span class="section-title">Recoupment Flags</span>
+      <div class="section-line"></div>
+      <button class="btn btn-secondary btn-sm" onclick="loadAlerts()">↻ Refresh</button>
+    </div>
+    <div class="card-grid" id="recoup-flags">
+      <div class="card" style="grid-column:1/-1; text-align:center; padding:32px; color:var(--muted)">
+        <span class="spinner"></span> Loading recoupment flags…
+      </div>
+    </div>
+
+    <div class="section-header">
+      <span class="section-title">SCA Risks</span>
+      <div class="section-line"></div>
+    </div>
+    <div class="card-grid" id="sca-alerts">
+      <div class="card" style="grid-column:1/-1; text-align:center; padding:32px; color:var(--muted)">
+        <span class="spinner"></span> Loading SCA alerts…
+      </div>
+    </div>
+
+    <div class="section-header">
+      <span class="section-title">Enrollment Fires</span>
+      <div class="section-line"></div>
+    </div>
+    <div class="card-grid" id="enrollment-alerts">
+      <div class="card" style="grid-column:1/-1; text-align:center; padding:32px; color:var(--muted)">
+        <span class="spinner"></span> Loading enrollment alerts…
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══════════════ RECOUPMENT TAB ══════════════ -->
+  <div class="pane" id="pane-recoupment">
+
+    <div style="margin-bottom:20px">
+      <div style="font-size:16px; font-weight:600; margin-bottom:4px">EOB / Recoupment Analyzer</div>
+      <div style="font-size:13px; color:var(--muted)">Upload EOB PDFs (and optionally a ledger CSV) to detect hidden recoupment lines and net payment discrepancies.</div>
+    </div>
+
+    <div class="upload-grid">
+      <!-- PDF drop zone -->
+      <div>
+        <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px">EOB PDF Files</div>
+        <div class="drop-zone" id="pdf-drop" onclick="document.getElementById('pdf-input').click()">
+          <div class="drop-zone-icon">📄</div>
+          <div class="drop-zone-title">Drop PDFs here</div>
+          <div class="drop-zone-sub">or click to browse — multiple files supported</div>
+          <div class="file-list" id="pdf-file-list"></div>
+        </div>
+        <input type="file" id="pdf-input" accept=".pdf" multiple style="display:none" onchange="handlePdfSelect(this)" />
+      </div>
+
+      <!-- Ledger CSV -->
+      <div>
+        <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px">Ledger CSV <span style="color:var(--muted); font-style:italic;">(optional)</span></div>
+        <div class="ledger-zone" id="ledger-drop" onclick="document.getElementById('ledger-input').click()">
+          <div style="font-size:28px; margin-bottom:8px; opacity:.45;">📊</div>
+          <div class="ledger-zone-title" id="ledger-name">Drop CSV ledger here</div>
+          <div class="ledger-zone-sub">or click to browse — cross-references payments</div>
+        </div>
+        <input type="file" id="ledger-input" accept=".csv" style="display:none" onchange="handleLedgerSelect(this)" />
+      </div>
+    </div>
+
+    <div class="flex-row" style="margin-bottom:24px">
+      <button class="btn btn-primary" id="analyze-btn" onclick="runBatchAnalysis()" disabled>
+        🔍 Analyze EOBs
+      </button>
+      <button class="btn btn-secondary" onclick="clearUploads()">✕ Clear</button>
+      <div id="analyze-spinner" class="hidden" style="margin-left:4px"><span class="spinner"></span> Analyzing…</div>
+    </div>
+
+    <!-- Summary bar -->
+    <div class="summary-bar hidden" id="recoup-summary">
+      <div class="stat-box">
+        <div class="stat-label">Total EOBs</div>
+        <div class="stat-val accent" id="rs-total">—</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Total Paid (Gross)</div>
+        <div class="stat-val success" id="rs-paid">—</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Hidden Recoupment</div>
+        <div class="stat-val danger" id="rs-flagged">—</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Net Actually Received</div>
+        <div class="stat-val" id="rs-net">—</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Files Flagged</div>
+        <div class="stat-val warn" id="rs-flagged-count">—</div>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="recoup-results"></div>
+
+  </div>
+
+  <!-- ══════════════ SCA TAB ══════════════ -->
+  <div class="pane" id="pane-sca">
+
+    <div class="flex-row" style="margin-bottom:20px">
+      <div>
+        <div style="font-size:16px; font-weight:600; margin-bottom:2px">SCA Authorization Tracker</div>
+        <div style="font-size:13px; color:var(--muted)">Monitor visit utilization and expiry for all Special Coverage Authorizations.</div>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn btn-primary" onclick="toggleScaForm()">+ Add SCA</button>
+      <button class="btn btn-secondary" onclick="loadSca()">↻ Refresh</button>
+    </div>
+
+    <!-- SCA inline form -->
+    <div class="inline-form hidden" id="sca-form">
+      <div class="form-title">New SCA Authorization</div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>Patient Name</label>
+          <input type="text" id="sca-patient" placeholder="Jane Doe" />
+        </div>
+        <div class="form-field">
+          <label>Payer</label>
+          <input type="text" id="sca-payer" placeholder="BlueCross BlueSield" />
+        </div>
+        <div class="form-field">
+          <label>Provider</label>
+          <input type="text" id="sca-provider" placeholder="Dr. Smith" />
+        </div>
+        <div class="form-field">
+          <label>Auth Number</label>
+          <input type="text" id="sca-auth" placeholder="AUTH-00123" />
+        </div>
+        <div class="form-field">
+          <label>Visits Approved</label>
+          <input type="number" id="sca-visits-approved" min="1" value="20" />
+        </div>
+        <div class="form-field">
+          <label>Visits Used</label>
+          <input type="number" id="sca-visits-used" min="0" value="0" />
+        </div>
+        <div class="form-field">
+          <label>Expiry Date</label>
+          <input type="date" id="sca-expiry" />
+        </div>
+        <div class="form-field">
+          <label>Diagnosis Code</label>
+          <input type="text" id="sca-diag" placeholder="F32.1" />
+        </div>
+      </div>
+      <div class="flex-row">
+        <button class="btn btn-primary" onclick="submitSca()">Create SCA</button>
+        <button class="btn btn-secondary" onclick="toggleScaForm()">Cancel</button>
+      </div>
+    </div>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Patient</th>
+            <th>Payer</th>
+            <th>Provider</th>
+            <th>Auth #</th>
+            <th style="min-width:200px">Visit Utilization</th>
+            <th>Expiry</th>
+            <th>Status</th>
+            <th style="text-align:center">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="sca-tbody">
+          <tr class="loading-row"><td colspan="8"><span class="spinner"></span> Loading SCAs…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- ══════════════ ERA/EFT TAB ══════════════ -->
+  <div class="pane" id="pane-enrollment">
+
+    <div style="margin-bottom:16px">
+      <div style="font-size:16px; font-weight:600; margin-bottom:2px">ERA / EFT Enrollment Manager</div>
+      <div style="font-size:13px; color:var(--muted)">Track payer enrollment status for Electronic Remittance Advice and Electronic Funds Transfer.</div>
+    </div>
+
+    <div class="sub-tab-bar">
+      <button class="sub-tab-btn active" data-subtab="era" onclick="switchSubTab('era')">ERA</button>
+      <button class="sub-tab-btn" data-subtab="eft" onclick="switchSubTab('eft')">EFT</button>
+    </div>
+
+    <div class="toolbar">
+      <select id="enroll-filter" onchange="applyEnrollFilter()">
+        <option value="">All Statuses</option>
+        <option value="active">Active</option>
+        <option value="pending">Pending</option>
+        <option value="rejected">Rejected</option>
+        <option value="expired">Expired</option>
+      </select>
+      <div class="spacer"></div>
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('import-input').click()">⬆ Import CSV</button>
+      <input type="file" id="import-input" accept=".csv" style="display:none" onchange="importEnrollmentCsv(this)" />
+      <button class="btn btn-secondary btn-sm" onclick="loadEnrollment()">↻ Refresh</button>
+    </div>
+
+    <!-- ERA pane -->
+    <div id="era-pane">
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Payer Name</th>
+              <th>Payer ID</th>
+              <th>Submission Date</th>
+              <th>Effective Date</th>
+              <th>NPI</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="era-tbody">
+            <tr class="loading-row"><td colspan="6"><span class="spinner"></span> Loading ERA data…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- EFT pane -->
+    <div id="eft-pane" class="hidden">
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Payer Name</th>
+              <th>Payer ID</th>
+              <th>Bank Name</th>
+              <th>Account (Last 4)</th>
+              <th>Submission Date</th>
+              <th>Deadline</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="eft-tbody">
+            <tr class="loading-row"><td colspan="7"><span class="spinner"></span> Loading EFT data…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+</div><!-- /content -->
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script>
+const API = '';
+
+// ── STATE ──
+let pdfFiles = [];
+let ledgerFile = null;
+let scaData = [];
+let eraData = [];
+let eftData = [];
+let currentSubTab = 'era';
+let enrollFilter = '';
+
+// ── TOAST ──
+function toast(msg, type='info', duration=4000) {
+  const icons = { error:'⚠', success:'✓', warn:'⚡', info:'ℹ' };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span class="toast-icon">${icons[type]||'ℹ'}</span><span class="toast-msg">${msg}</span><span class="toast-close" onclick="this.parentElement.remove()">✕</span>`;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => { el.style.animation='fadeOut .3s forwards'; setTimeout(()=>el.remove(),300); }, duration);
+}
+
+// ── API FETCH ──
+async function api(path, opts={}) {
+  try {
+    const res = await fetch(API + path, opts);
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`${res.status} ${res.statusText}: ${txt.slice(0,120)}`);
+    }
+    const ct = res.headers.get('content-type')||'';
+    return ct.includes('application/json') ? res.json() : res.text();
+  } catch(e) {
+    if (e.name === 'TypeError' && e.message.includes('fetch')) {
+      throw new Error('Cannot reach backend at ' + API + '. Is FastAPI running?');
+    }
+    throw e;
+  }
+}
+
+// ── HEALTH CHECK ──
+async function checkHealth() {
+  const pill = document.getElementById('health-pill');
+  try {
+    await api('/api/health');
+    pill.innerHTML = '<span class="nav-dot"></span>API Online';
+    pill.style.background = 'color-mix(in srgb, #51cf66 15%, transparent)';
+    pill.style.color = '#51cf66';
+    pill.style.borderColor = 'color-mix(in srgb, #51cf66 30%, transparent)';
+  } catch {
+    pill.innerHTML = '⚠ API Offline';
+    pill.style.background = 'color-mix(in srgb, #ff4d6d 15%, transparent)';
+    pill.style.color = '#ff4d6d';
+    pill.style.borderColor = 'color-mix(in srgb, #ff4d6d 30%, transparent)';
+  }
+}
+
+// ── TAB SWITCHING ──
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('pane-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'sca') loadSca();
+    if (btn.dataset.tab === 'enrollment') loadEnrollment();
+  });
+});
+
+// ══════════════════════════════════════
+// ALERTS TAB
+// ══════════════════════════════════════
+
+async function loadAlerts() {
+  loadRecoupFlags();
+  loadScaAlerts();
+  loadEnrollmentAlerts();
+}
+
+async function loadRecoupFlags() {
+  const el = document.getElementById('recoup-flags');
+  el.innerHTML = '<div class="card" style="grid-column:1/-1;text-align:center;padding:24px;color:var(--muted)"><span class="spinner"></span> Loading…</div>';
+  try {
+    const data = await api('/api/recoupment/history');
+    const items = Array.isArray(data) ? data : (data.items || data.results || []);
+    if (!items.length) { el.innerHTML = emptyState('No recoupment flags found','All EOBs appear clean'); updateAlertsBadge(); return; }
+    const flagged = items.filter(i => i.flagged || i.has_recoupment || i.recoupment_amount > 0);
+    if (!flagged.length) { el.innerHTML = emptyState('No active recoupment flags','All analyzed EOBs appear clean'); updateAlertsBadge(); return; }
+    el.innerHTML = flagged.map(f => `
+      <div class="card card-sm alert-card alert-danger">
+        <div class="alert-label">Claim ${f.claim_number || f.claim_id || 'N/A'}</div>
+        <div class="alert-amount">${fmt$(f.recoupment_amount || f.amount_flagged || 0)}</div>
+        <div class="alert-title">${esc(f.payer || f.payer_name || 'Unknown Payer')}</div>
+        <div class="alert-detail">DOS: ${f.date_of_service || f.dos || '—'} · Net: ${fmt$(f.net_received || f.net_amount || 0)}</div>
+        ${f.recoupment_text ? `<div class="alert-detail" style="margin-top:6px;font-style:italic;font-size:11px">"${esc(f.recoupment_text.slice(0,80))}…"</div>` : ''}
+      </div>
+    `).join('');
+    document.querySelector('#alerts-badge').textContent = flagged.length;
+    document.querySelector('#alerts-badge').classList.remove('hidden');
+    updateAlertsBadge();
+  } catch(e) { el.innerHTML = errState(e.message); toast(e.message,'error'); }
+}
+
+async function loadScaAlerts() {
+  const el = document.getElementById('sca-alerts');
+  el.innerHTML = '<div class="card" style="grid-column:1/-1;text-align:center;padding:24px;color:var(--muted)"><span class="spinner"></span> Loading…</div>';
+  try {
+    const data = await api('/api/sca/alerts');
+    const items = Array.isArray(data) ? data : (data.alerts || data.items || []);
+    if (!items.length) { el.innerHTML = emptyState('No SCA risks detected','All authorizations within normal thresholds'); return; }
+    el.innerHTML = items.map(a => `
+      <div class="card card-sm alert-card alert-warn">
+        <div class="alert-label">${esc(a.reason || a.risk_type || 'Risk Alert')}</div>
+        <div class="alert-amount" style="font-size:18px">${esc(a.patient_name || a.patient || 'Unknown Patient')}</div>
+        <div class="alert-title" style="font-size:13px">${esc(a.payer || '—')} · ${esc(a.provider || '—')}</div>
+        <div class="alert-detail">
+          ${a.visits_remaining !== undefined ? `Visits remaining: <strong>${a.visits_remaining}</strong>` : ''}
+          ${a.expiry_date ? ` · Expires: ${a.expiry_date}` : ''}
+        </div>
+      </div>
+    `).join('');
+  } catch(e) { el.innerHTML = errState(e.message); toast(e.message,'error'); }
+}
+
+async function loadEnrollmentAlerts() {
+  const el = document.getElementById('enrollment-alerts');
+  el.innerHTML = '<div class="card" style="grid-column:1/-1;text-align:center;padding:24px;color:var(--muted)"><span class="spinner"></span> Loading…</div>';
+  try {
+    const data = await api('/api/enrollment/alerts');
+    const items = Array.isArray(data) ? data : (data.alerts || data.items || []);
+    if (!items.length) { el.innerHTML = emptyState('No enrollment fires','All ERA/EFT enrollments are current'); return; }
+    el.innerHTML = items.map(a => {
+      const isUrgent = a.urgent || a.severity === 'high' || a.days_until_deadline <= 3;
+      return `
+        <div class="card card-sm alert-card ${isUrgent ? 'alert-danger' : 'alert-info'}">
+          <div class="alert-label">${esc(a.type || a.enrollment_type || 'Enrollment')}</div>
+          <div class="alert-amount" style="font-size:16px">${esc(a.payer_name || a.payer || 'Unknown Payer')}</div>
+          <div class="alert-title" style="font-size:13px">${esc(a.issue || a.message || a.reason || '')}</div>
+          ${a.deadline ? `<div class="alert-detail">Deadline: ${a.deadline}</div>` : ''}
+          ${a.days_until_deadline !== undefined ? `<div class="alert-detail" style="color:var(${isUrgent?'--danger':'--warn'})">${a.days_until_deadline} days remaining</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  } catch(e) { el.innerHTML = errState(e.message); toast(e.message,'error'); }
+}
+
+function updateAlertsBadge() {
+  const badge = document.getElementById('alerts-badge');
+  const count = parseInt(badge.textContent) || 0;
+  if (count > 0) badge.classList.remove('hidden');
+}
+
+// ══════════════════════════════════════
+// RECOUPMENT TAB
+// ══════════════════════════════════════
+
+const pdfDrop = document.getElementById('pdf-drop');
+pdfDrop.addEventListener('dragover', e => { e.preventDefault(); pdfDrop.classList.add('over'); });
+pdfDrop.addEventListener('dragleave', () => pdfDrop.classList.remove('over'));
+pdfDrop.addEventListener('drop', e => {
+  e.preventDefault(); pdfDrop.classList.remove('over');
+  const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.pdf'));
+  files.forEach(addPdfFile);
+});
+
+const ledgerDrop = document.getElementById('ledger-drop');
+ledgerDrop.addEventListener('dragover', e => { e.preventDefault(); ledgerDrop.style.borderColor='var(--success)'; });
+ledgerDrop.addEventListener('dragleave', () => ledgerDrop.style.borderColor='');
+ledgerDrop.addEventListener('drop', e => {
+  e.preventDefault(); ledgerDrop.style.borderColor='';
+  const f = e.dataTransfer.files[0];
+  if (f && f.name.endsWith('.csv')) setLedger(f);
+});
+
+function handlePdfSelect(inp) {
+  Array.from(inp.files).forEach(addPdfFile);
+  inp.value='';
+}
+function handleLedgerSelect(inp) {
+  if (inp.files[0]) setLedger(inp.files[0]);
+  inp.value='';
+}
+
+function addPdfFile(f) {
+  if (!pdfFiles.find(x=>x.name===f.name)) pdfFiles.push(f);
+  renderPdfList();
+}
+function setLedger(f) {
+  ledgerFile = f;
+  document.getElementById('ledger-name').textContent = '📊 ' + f.name;
+}
+
+function renderPdfList() {
+  const el = document.getElementById('pdf-file-list');
+  el.innerHTML = pdfFiles.map((f,i) => `
+    <div class="file-chip">
+      📄 ${esc(f.name)}
+      <span class="file-chip-remove" onclick="removePdf(${i})">✕</span>
+    </div>
+  `).join('');
+  document.getElementById('analyze-btn').disabled = pdfFiles.length === 0;
+}
+
+function removePdf(i) {
+  pdfFiles.splice(i, 1);
+  renderPdfList();
+}
+
+function clearUploads() {
+  pdfFiles = []; ledgerFile = null;
+  renderPdfList();
+  document.getElementById('ledger-name').textContent = 'Drop CSV ledger here';
+  document.getElementById('recoup-results').innerHTML = '';
+  document.getElementById('recoup-summary').classList.add('hidden');
+}
+
+async function runBatchAnalysis() {
+  if (!pdfFiles.length) return;
+  const btn = document.getElementById('analyze-btn');
+  const spin = document.getElementById('analyze-spinner');
+  btn.disabled = true; spin.classList.remove('hidden');
+  document.getElementById('recoup-results').innerHTML = '';
+  document.getElementById('recoup-summary').classList.add('hidden');
+
+  const fd = new FormData();
+  pdfFiles.forEach(f => fd.append('files', f, f.name));
+  if (ledgerFile) fd.append('ledger', ledgerFile, ledgerFile.name);
+
+  try {
+    const data = await api('/api/recoupment/batch', { method:'POST', body: fd });
+    renderRecoupResults(data);
+    toast('Analysis complete — ' + pdfFiles.length + ' file(s) processed', 'success');
+  } catch(e) {
+    toast('Analysis failed: ' + e.message, 'error');
+    document.getElementById('recoup-results').innerHTML = errCard(e.message);
+  } finally {
+    btn.disabled = false; spin.classList.add('hidden');
+  }
+}
+
+function renderRecoupResults(data) {
+  const results = data.results || data.files || (Array.isArray(data) ? data : []);
+  if (!results.length) { document.getElementById('recoup-results').innerHTML = emptyState('No results returned','The backend returned an empty response'); return; }
+
+  let totalPaid=0, totalRecoup=0, totalNet=0, flaggedCount=0;
+  results.forEach(r => {
+    totalPaid   += (r.paid_amount||r.gross_paid||0);
+    totalRecoup += (r.recoupment_amount||r.amount_flagged||0);
+    totalNet    += (r.net_received||r.net_amount||r.paid_amount||0);
+    if (r.flagged||r.has_recoupment||(r.recoupment_amount>0)) flaggedCount++;
+  });
+
+  document.getElementById('rs-total').textContent = results.length;
+  document.getElementById('rs-paid').textContent = fmt$(totalPaid);
+  document.getElementById('rs-flagged').textContent = fmt$(totalRecoup);
+  document.getElementById('rs-net').textContent = fmt$(totalNet);
+  document.getElementById('rs-flagged-count').textContent = flaggedCount + ' / ' + results.length;
+  document.getElementById('recoup-summary').classList.remove('hidden');
+
+  const el = document.getElementById('recoup-results');
+  el.innerHTML = '<div class="section-header" style="margin-top:8px"><span class="section-title">Per-File Results</span><div class="section-line"></div></div>';
+  el.innerHTML += results.map(r => {
+    const isFlagged = r.flagged || r.has_recoupment || (r.recoupment_amount||0)>0;
+    const statusLabel = isFlagged ? 'FLAGGED' : 'CLEAN';
+    const statusClass = isFlagged ? 'badge-flagged' : 'badge-clean';
+    const cardBorder  = isFlagged ? 'border-color: color-mix(in srgb,var(--danger) 40%, var(--border))' : '';
+    return `
+      <div class="card result-card" style="${cardBorder}">
+        <div class="rc-header">
+          <span class="rc-filename">📄 ${esc(r.filename||r.file||'Unknown File')}</span>
+          <span class="rc-status-badge ${statusClass}">${statusLabel}</span>
+        </div>
+        <div class="rc-grid">
+          <div class="rc-field">
+            <div class="rc-field-label">Claim #</div>
+            <div class="rc-field-val">${esc(r.claim_number||r.claim_id||'—')}</div>
+          </div>
+          <div class="rc-field">
+            <div class="rc-field-label">Date of Service</div>
+            <div class="rc-field-val">${esc(r.date_of_service||r.dos||'—')}</div>
+          </div>
+          <div class="rc-field">
+            <div class="rc-field-label">Paid Amount</div>
+            <div class="rc-field-val" style="color:var(--success)">${fmt$(r.paid_amount||r.gross_paid||0)}</div>
+          </div>
+          ${isFlagged ? `
+          <div class="rc-field">
+            <div class="rc-field-label">Recoupment</div>
+            <div class="rc-field-val" style="color:var(--danger)">${fmt$(r.recoupment_amount||r.amount_flagged||0)}</div>
+          </div>
+          <div class="rc-field">
+            <div class="rc-field-label">Net Received</div>
+            <div class="rc-field-val">${fmt$(r.net_received||r.net_amount||0)}</div>
+          </div>
+          ` : ''}
+          <div class="rc-field">
+            <div class="rc-field-label">Payer</div>
+            <div class="rc-field-val">${esc(r.payer||r.payer_name||'—')}</div>
+          </div>
+        </div>
+        ${isFlagged && r.recoupment_text ? `<div class="rc-recoup-text">⚠ "${esc(r.recoupment_text)}"</div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+// ══════════════════════════════════════
+// SCA TAB
+// ══════════════════════════════════════
+
+function toggleScaForm() {
+  const form = document.getElementById('sca-form');
+  form.classList.toggle('hidden');
+}
+
+async function loadSca() {
+  const tbody = document.getElementById('sca-tbody');
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="8"><span class="spinner"></span> Loading…</td></tr>';
+  try {
+    const data = await api('/api/sca/');
+    scaData = Array.isArray(data) ? data : (data.items || data.results || []);
+    renderScaTable();
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--danger);padding:24px">⚠ ${esc(e.message)}</td></tr>`;
+    toast(e.message,'error');
+  }
+}
+
+function renderScaTable() {
+  const tbody = document.getElementById('sca-tbody');
+  if (!scaData.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:36px;color:var(--muted)">No SCAs found. Add one above.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = scaData.map(s => {
+    const used     = s.visits_used || s.visits_consumed || 0;
+    const approved = s.visits_approved || s.visits_authorized || s.total_visits || 1;
+    const pct      = Math.min(100, Math.round((used/approved)*100));
+    const fillClass = pct>=90?'danger':pct>=70?'warn':'';
+    const status   = scaStatus(s);
+    const expiry   = s.expiry_date || s.expiration_date || '—';
+    const expSoon  = daysUntil(expiry) <= 14;
+    return `
+      <tr>
+        <td style="font-weight:500">${esc(s.patient_name||s.patient||'—')}</td>
+        <td>${esc(s.payer||s.payer_name||'—')}</td>
+        <td>${esc(s.provider||s.provider_name||'—')}</td>
+        <td style="color:var(--muted);font-size:12px">${esc(s.auth_number||s.authorization_number||s.id||'—')}</td>
+        <td>
+          <div class="progress-wrap">
+            <div class="progress-bar"><div class="progress-fill ${fillClass}" style="width:${pct}%"></div></div>
+            <span class="progress-label">${used}/${approved}</span>
+          </div>
+        </td>
+        <td style="${expSoon?'color:var(--warn);font-weight:600':''}">
+          ${expiry}${expSoon?` <span style="font-size:10px;color:var(--warn)">(${daysUntil(expiry)}d)</span>`:''}
+        </td>
+        <td><span class="rc-status-badge ${status.cls}">${status.label}</span></td>
+        <td style="text-align:center">
+          <div class="visit-ctrl">
+            <button class="btn btn-secondary btn-sm btn-icon" onclick="updateVisit('${s.id}','decrement')" title="Remove visit">−</button>
+            <span class="visit-num">${used}</span>
+            <button class="btn btn-secondary btn-sm btn-icon" onclick="updateVisit('${s.id}','increment')" title="Add visit">+</button>
+            <button class="btn btn-danger btn-sm btn-icon" onclick="deleteSca('${s.id}')" title="Delete SCA" style="margin-left:4px">🗑</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function scaStatus(s) {
+  if (s.status) {
+    const map = { active:{cls:'badge-clean',label:'Active'}, expired:{cls:'badge-flagged',label:'Expired'}, pending:{cls:'badge-warn',label:'Pending'}, exhausted:{cls:'badge-flagged',label:'Exhausted'}, approved:{cls:'badge-info',label:'Approved'} };
+    return map[s.status.toLowerCase()] || {cls:'badge-gray',label:s.status};
+  }
+  const used=s.visits_used||0, approved=s.visits_approved||1;
+  if (daysUntil(s.expiry_date||s.expiration_date) < 0) return {cls:'badge-flagged',label:'Expired'};
+  if (used>=approved) return {cls:'badge-flagged',label:'Exhausted'};
+  if (used/approved>=0.85) return {cls:'badge-warn',label:'Near Limit'};
+  return {cls:'badge-clean',label:'Active'};
+}
+
+async function updateVisit(id, direction) {
+  const sca = scaData.find(s=>String(s.id)===String(id));
+  if (!sca) return;
+  const used = (sca.visits_used||sca.visits_consumed||0) + (direction==='increment'?1:-1);
+  if (used<0) return;
+  try {
+    await api(`/api/sca/${id}/visits`, {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ visits_used: used, visits_consumed: used })
+    });
+    if (sca.visits_used !== undefined) sca.visits_used = used;
+    else sca.visits_consumed = used;
+    renderScaTable();
+  } catch(e) { toast('Failed to update visits: '+e.message,'error'); }
+}
+
+async function deleteSca(id) {
+  if (!confirm('Delete this SCA? This action cannot be undone.')) return;
+  try {
+    await api(`/api/sca/${id}`, { method:'DELETE' });
+    scaData = scaData.filter(s=>String(s.id)!==String(id));
+    renderScaTable();
+    toast('SCA deleted','success');
+  } catch(e) { toast('Delete failed: '+e.message,'error'); }
+}
+
+async function submitSca() {
+  const payload = {
+    patient_name: document.getElementById('sca-patient').value.trim(),
+    payer:        document.getElementById('sca-payer').value.trim(),
+    provider:     document.getElementById('sca-provider').value.trim(),
+    auth_number:  document.getElementById('sca-auth').value.trim(),
+    visits_approved: parseInt(document.getElementById('sca-visits-approved').value)||0,
+    visits_used:     parseInt(document.getElementById('sca-visits-used').value)||0,
+    expiry_date:  document.getElementById('sca-expiry').value,
+    diagnosis_code: document.getElementById('sca-diag').value.trim(),
+  };
+  if (!payload.patient_name||!payload.payer) { toast('Patient and Payer are required','warn'); return; }
+  try {
+    const created = await api('/api/sca/create', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    scaData.unshift(created);
+    renderScaTable();
+    toggleScaForm();
+    toast('SCA created successfully','success');
+  } catch(e) { toast('Failed to create SCA: '+e.message,'error'); }
+}
+
+// ══════════════════════════════════════
+// ERA/EFT TAB
+// ══════════════════════════════════════
+
+function switchSubTab(tab) {
+  currentSubTab = tab;
+  document.querySelectorAll('.sub-tab-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.subtab===tab);
+  });
+  document.getElementById('era-pane').classList.toggle('hidden', tab!=='era');
+  document.getElementById('eft-pane').classList.toggle('hidden', tab!=='eft');
+}
+
+async function loadEnrollment() {
+  loadEra(); loadEft();
+}
+
+async function loadEra() {
+  const tbody = document.getElementById('era-tbody');
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="6"><span class="spinner"></span> Loading…</td></tr>';
+  try {
+    const data = await api('/api/enrollment/era');
+    eraData = Array.isArray(data) ? data : (data.items||data.results||[]);
+    renderEraTable();
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--danger);padding:24px">⚠ ${esc(e.message)}</td></tr>`;
+    toast(e.message,'error');
+  }
+}
+
+async function loadEft() {
+  const tbody = document.getElementById('eft-tbody');
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="7"><span class="spinner"></span> Loading…</td></tr>';
+  try {
+    const data = await api('/api/enrollment/eft');
+    eftData = Array.isArray(data) ? data : (data.items||data.results||[]);
+    renderEftTable();
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--danger);padding:24px">⚠ ${esc(e.message)}</td></tr>`;
+    toast(e.message,'error');
+  }
+}
+
+function applyEnrollFilter() {
+  enrollFilter = document.getElementById('enroll-filter').value.toLowerCase();
+  renderEraTable(); renderEftTable();
+}
+
+function enrollStatus(s) {
+  if (!s) return {cls:'badge-gray',label:'Unknown'};
+  const map = { active:{cls:'badge-clean',label:'Active'}, approved:{cls:'badge-clean',label:'Approved'}, pending:{cls:'badge-warn',label:'Pending'}, submitted:{cls:'badge-info',label:'Submitted'}, rejected:{cls:'badge-flagged',label:'Rejected'}, expired:{cls:'badge-flagged',label:'Expired'}, inactive:{cls:'badge-gray',label:'Inactive'} };
+  return map[s.toLowerCase()] || {cls:'badge-gray',label:s};
+}
+
+function renderEraTable() {
+  const tbody = document.getElementById('era-tbody');
+  let rows = eraData;
+  if (enrollFilter) rows = rows.filter(r=>(r.status||'').toLowerCase()===enrollFilter);
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:36px;color:var(--muted)">No ERA records found</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => {
+    const st = enrollStatus(r.status);
+    return `
+      <tr>
+        <td style="font-weight:500">${esc(r.payer_name||r.payer||'—')}</td>
+        <td style="color:var(--muted);font-size:12px;font-family:monospace">${esc(r.payer_id||r.payer_identifier||'—')}</td>
+        <td>${esc(r.submission_date||r.submitted_date||'—')}</td>
+        <td>${esc(r.effective_date||r.start_date||'—')}</td>
+        <td style="font-size:12px;font-family:monospace">${esc(r.npi||'—')}</td>
+        <td><span class="rc-status-badge ${st.cls}">${st.label}</span></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function renderEftTable() {
+  const tbody = document.getElementById('eft-tbody');
+  let rows = eftData;
+  if (enrollFilter) rows = rows.filter(r=>(r.status||'').toLowerCase()===enrollFilter);
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:36px;color:var(--muted)">No EFT records found</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => {
+    const st = enrollStatus(r.status);
+    const deadline = r.deadline || r.deadline_date || r.due_date || '—';
+    const daysLeft = daysUntil(deadline);
+    const urgent   = deadline!=='—' && daysLeft>=0 && daysLeft<=7;
+    return `
+      <tr>
+        <td style="font-weight:500">${esc(r.payer_name||r.payer||'—')}</td>
+        <td style="color:var(--muted);font-size:12px;font-family:monospace">${esc(r.payer_id||'—')}</td>
+        <td>${esc(r.bank_name||r.bank||'—')}</td>
+        <td style="font-family:monospace;font-size:12px">••••${esc(r.account_last4||r.last4||'????')}</td>
+        <td>${esc(r.submission_date||'—')}</td>
+        <td class="${urgent?'deadline-soon':''}">${deadline}${urgent?` <span style="font-size:10px">(${daysLeft}d)</span>`:''}</td>
+        <td><span class="rc-status-badge ${st.cls}">${st.label}</span></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function importEnrollmentCsv(inp) {
+  if (!inp.files[0]) return;
+  const fd = new FormData();
+  fd.append('file', inp.files[0], inp.files[0].name);
+  try {
+    await api('/api/enrollment/import', { method:'POST', body: fd });
+    toast('CSV imported successfully','success');
+    loadEnrollment();
+  } catch(e) { toast('Import failed: '+e.message,'error'); }
+  inp.value='';
+}
+
+// ── UTILS ──
+function fmt$(n) {
+  if (!n && n!==0) return '—';
+  return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0,maximumFractionDigits:0}).format(n);
+}
+function esc(s) {
+  if (s===null||s===undefined) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function daysUntil(dateStr) {
+  if (!dateStr||dateStr==='—') return Infinity;
+  const d = new Date(dateStr); const now = new Date();
+  return Math.round((d-now)/(1000*60*60*24));
+}
+function emptyState(title, sub='') {
+  return `<div class="card" style="grid-column:1/-1">
+    <div class="empty">
+      <div class="empty-icon">✓</div>
+      <div class="empty-title">${title}</div>
+      <div class="empty-sub">${sub}</div>
+    </div>
+  </div>`;
+}
+function errState(msg) {
+  return `<div class="card" style="grid-column:1/-1">
+    <div class="empty">
+      <div class="empty-icon" style="color:var(--danger)">⚠</div>
+      <div class="empty-title" style="color:var(--danger)">Failed to load</div>
+      <div class="empty-sub">${esc(msg)}</div>
+    </div>
+  </div>`;
+}
+function errCard(msg) {
+  return `<div class="card" style="border-color:var(--danger)">
+    <div style="color:var(--danger);font-weight:600;margin-bottom:4px">⚠ Analysis Error</div>
+    <div style="font-size:13px;color:var(--muted)">${esc(msg)}</div>
+  </div>`;
+}
+
+// ── INIT ──
+checkHealth();
+loadAlerts();
+</script>
+</body>
+</html>

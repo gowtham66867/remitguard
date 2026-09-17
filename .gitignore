@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.sqlite3
+*.log
+.env
+.venv/
+venv/
+node_modules/
+platform/frontend/dist/
+platform/remitguard.db
+server.log
+samples/

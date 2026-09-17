@@ -1,0 +1,39 @@
+{
+  "_comment": "Extensible library of payer-specific recoupment/offset phrasing. Add new phrases as we see them in real EOBs, tagged by payer so we can show the data-moat story (different payers hide it differently).",
+  "generic": [
+    "outstanding\\s+neg\\s*bal",
+    "with\\s+differ",
+    "recoup(?:ment|ed|ing)?",
+    "offset",
+    "withhold(?:ing)?",
+    "prior\\s+overpayment",
+    "applied\\s+to\\s+(?:prior|outstanding|existing)\\s+balance",
+    "amount\\s+withheld",
+    "net\\s+balance\\s+due",
+    "take\\s*back",
+    "adjustment\\s+for\\s+prior\\s+claim",
+    "previously\\s+overpaid",
+    "balance\\s+forward",
+    "amount\\s+recouped",
+    "deducted\\s+from\\s+(?:this\\s+)?payment"
+  ],
+  "anthem": [
+    "outstanding\\s+neg\\s*bal\\s+with\\s+differ"
+  ],
+  "aetna": [
+    "overpayment\\s+recovery",
+    "claim\\s+adjustment\\s+reason\\s+code\\s*:?\\s*A2"
+  ],
+  "united_healthcare": [
+    "uhc\\s+recovery",
+    "negative\\s+balance\\s+applied"
+  ],
+  "cigna": [
+    "cigna\\s+overpayment",
+    "funds\\s+recovery"
+  ],
+  "medicaid": [
+    "medicaid\\s+recoupment",
+    "state\\s+recovery\\s+action"
+  ]
+}
