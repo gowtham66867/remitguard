@@ -6,8 +6,14 @@
 
 A multi-agent AI platform that catches hidden payer clawbacks, tracks Single Case Agreement lifecycles, and manages ERA/EFT enrollment status — built for behavioral health practices that can't afford to miss a $18,000 offset buried in an EOB.
 
-**Live demo:** _not currently deployed_ — `cd platform && bash deploy.sh` publishes it to Cloud Run and prints the URL  
-**API docs:** `/docs` on the deployed service
+**Live demo:** https://remitguard-hagfyuumxa-uc.a.run.app  
+**API docs:** https://remitguard-hagfyuumxa-uc.a.run.app/docs  
+**Retrieval status:** [`/api/semantic/stats`](https://remitguard-hagfyuumxa-uc.a.run.app/api/semantic/stats) — reports whether the Moss layer is live
+
+> The deployed instance runs **regex-only**: no Moss credentials are set on it,
+> so the semantic layer self-disables and the platform serves normally without
+> it. `/api/semantic/stats` says so explicitly. Redeploy with `MOSS_PROJECT_ID`
+> and `MOSS_PROJECT_KEY` exported to enable semantic recall.
 
 ---
 
