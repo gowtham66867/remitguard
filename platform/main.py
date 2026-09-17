@@ -44,10 +44,48 @@ app.include_router(enrollment_router)
 app.include_router(review_router)
 app.include_router(ws_pipeline_router)
 
+# ── Moss semantic recall layer ────────────────────────────────────────────────
+# Warmed in a background thread: building/downloading the phrase index must not
+# block the server from accepting traffic. Until it is ready, RecoupmentAgent
+# runs regex-only, so requests during warm-up are served normally.
+@app.on_event("startup")
+def warm_semantic_index() -> None:
+    import threading
+
+    def _warm() -> None:
+        try:
+            from agents.semantic_matcher import get_matcher
+            matcher = get_matcher()
+            if not matcher.enabled:
+                print(f"[startup] Moss semantic layer off — {matcher.disabled_reason}")
+                return
+            if matcher.warm():
+                print(f"[startup] Moss semantic layer ready — index '{matcher.index_name}'")
+            else:
+                print(f"[startup] Moss warm failed — {matcher.disabled_reason}")
+        except Exception as exc:
+            print(f"[startup] Moss semantic layer unavailable: {exc}")
+
+    threading.Thread(target=_warm, name="moss-warm", daemon=True).start()
+
+
 # Health check — registered before the SPA catch-all
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "RemitGuard Platform"}
+
+
+@app.get("/api/semantic/stats")
+def semantic_stats():
+    """
+    Moss retrieval telemetry — readiness, query volume, semantic flag count,
+    learned phrases, and p50/p95 query latency.
+    """
+    try:
+        from agents.semantic_matcher import get_matcher
+        return get_matcher().stats()
+    except Exception as exc:
+        return {"enabled": False, "disabled_reason": f"{type(exc).__name__}: {exc}"}
 
 # Serve frontend — plain HTML file (no build step needed)
 # Must be registered AFTER all /api/* routes so it doesn't shadow them.

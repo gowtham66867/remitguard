@@ -2,11 +2,23 @@
 RecoupmentAgent — self-validating EOB recoupment detector.
 
 Pattern: SELF-VALIDATION LOOP
-  Phase 1: Detect flags via pattern matching + ledger reconciliation.
+  Phase 1: Detect flags via pattern matching + Moss semantic recall + ledger
+           reconciliation.
   Phase 2: Score each flag with a confidence rubric; re-examine low-confidence
            flags in a ±3-line window; loop up to 2 iterations.
 
-Python 3.9 compatible.
+Detection runs two complementary passes per line:
+
+  1. Regex against `patterns.json` — exact, zero-cost, but only catches phrasings
+     already in the library.
+  2. Moss semantic retrieval (`agents/semantic_matcher.py`) on the lines regex
+     missed — catches reworded offsets the library has never seen, which is the
+     failure mode that lets a clawback sit undetected for 90 days.
+
+Pass 2 is optional. With no Moss credentials the agent behaves exactly as it did
+before: regex-only, same flags, same confidences.
+
+Python 3.9 compatible (the Moss layer self-disables below Python 3.10).
 """
 
 from __future__ import annotations
@@ -96,10 +108,29 @@ def _find_paid_and_billed(text: str):
     return billed, paid
 
 
-def _detect_flags(text: str, compiled: Dict[str, re.Pattern]) -> List[Dict]:
-    """Phase 1 detection: scan every line for pattern matches."""
+def _detect_flags(
+    text: str,
+    compiled: Dict[str, re.Pattern],
+    matcher=None,
+    semantic_requires_amount: bool = True,
+) -> List[Dict]:
+    """
+    Phase 1 detection: scan every line for pattern matches, then fall back to
+    Moss semantic retrieval on the lines no regex claimed.
+
+    The semantic pass only ever sees lines regex already rejected, so it can add
+    recall but can never change an existing regex verdict. `matcher=None`
+    reproduces the original regex-only behaviour exactly.
+
+    `semantic_requires_amount` restricts the semantic pass to lines carrying a
+    dollar figure. A clawback the practice can act on always states an amount,
+    while prose, addresses and footers do not — so the gate removes a whole
+    class of unactionable near-miss flags and cuts query volume (and therefore
+    latency) on a typical EOB at the same time. Regex matching is unaffected.
+    """
     flags: List[Dict] = []
     for line in text.splitlines():
+        matched = False
         for tag, regex in compiled.items():
             match = regex.search(line)
             if match:
@@ -113,7 +144,28 @@ def _detect_flags(text: str, compiled: Dict[str, re.Pattern]) -> List[Dict]:
                     "confidence": 0.0,
                     "validated": False,
                 })
+                matched = True
                 break  # one flag per line
+
+        if matched or matcher is None:
+            continue
+
+        # ── semantic recall pass ──────────────────────────────────────────────
+        amounts = _extract_amounts(line)
+        if semantic_requires_amount and not amounts:
+            continue
+
+        hit = matcher.match(line)
+        if hit is not None:
+            flag = {
+                "line": line.strip(),
+                "amounts_found": amounts,
+                "confidence": 0.0,
+                "validated": False,
+            }
+            flag.update(hit.to_flag_fields())
+            flags.append(flag)
+
     return flags
 
 
@@ -167,11 +219,14 @@ def _flag_confidence(
     Score a single flag against the confidence rubric.
 
     Rubric:
-      +0.4  Has a dollar amount on the same line
-      +0.2  Amount > $100
-      +0.2  Payer pattern match (non-ledger source)
-      +0.1  Line contains a known payer name
-      +0.1  Any amount > paid_amount (full clawback scenario)
+      +0.4   Has a dollar amount on the same line
+      +0.2   Amount > $100
+      +0.2   Payer regex pattern match (non-ledger source)
+      +0.15  Moss semantic match — weighted below an exact regex hit, since a
+             semantic neighbour is weaker evidence than a known payer phrase
+      +0.05  ...and the semantic hit resolved to a human-confirmed phrase
+      +0.1   Line contains a known payer name
+      +0.1   Any amount > paid_amount (full clawback scenario)
     """
     score = 0.0
     amounts = flag.get("amounts_found") or []
@@ -188,6 +243,13 @@ def _flag_confidence(
     # +0.2 — matched via payer pattern (not ledger)
     if flag.get("source") == "pattern":
         score += 0.2
+    elif flag.get("source") == "semantic":
+        # Semantic recall is real evidence but weaker than an exact phrase hit.
+        score += 0.15
+        if flag.get("semantic_learned"):
+            # This phrasing was confirmed by a billing coordinator on a previous
+            # EOB — strongest signal the semantic layer can offer.
+            score += 0.05
 
     # +0.1 — line contains a known payer name
     if any(name in line_lower for name in _KNOWN_PAYER_NAMES):
@@ -247,8 +309,27 @@ class RecoupmentAgent:
     result = RecoupmentAgent().run(text, "eob_2024.pdf", ledger={"CLM001": 450.00})
     """
 
-    def __init__(self, patterns_path: str = PATTERNS_PATH) -> None:
+    def __init__(
+        self,
+        patterns_path: str = PATTERNS_PATH,
+        matcher=None,
+        use_semantic: bool = True,
+    ) -> None:
         self._compiled = _load_compiled_patterns(patterns_path)
+
+        # Moss semantic layer. Resolved lazily via the process-wide singleton so
+        # the index is loaded once and shared; `use_semantic=False` pins the
+        # agent to regex-only, which the eval harness uses as its baseline.
+        if not use_semantic:
+            self._matcher = None
+        elif matcher is not None:
+            self._matcher = matcher
+        else:
+            try:
+                from agents.semantic_matcher import get_matcher
+                self._matcher = get_matcher()
+            except Exception:  # never let the optional layer break detection
+                self._matcher = None
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -264,19 +345,29 @@ class RecoupmentAgent:
         all_lines = text.splitlines()
 
         # ---- Phase 1: Detect ------------------------------------------------
-        flags = _detect_flags(text, self._compiled)
+        active_matcher = self._matcher if (self._matcher and self._matcher.ready) else None
+        flags = _detect_flags(text, self._compiled, matcher=active_matcher)
         billed_amount, paid_amount = _find_paid_and_billed(text)
         claim_numbers = CLAIM_NUM_RE.findall(text)
 
         if ledger:
             _reconcile_with_ledger(flags, claim_numbers, paid_amount, ledger)
 
+        semantic_count = sum(1 for f in flags if f.get("source") == "semantic")
         detection_log.append({
             "phase": "detect",
-            "message": f"[RecoupmentAgent][phase=detect] found {len(flags)} flags",
+            "message": (
+                f"[RecoupmentAgent][phase=detect] found {len(flags)} flags "
+                f"({semantic_count} via Moss semantic recall)"
+            ),
             "flag_count": len(flags),
+            "semantic_flag_count": semantic_count,
+            "semantic_enabled": active_matcher is not None,
         })
-        logger.info("[RecoupmentAgent][phase=detect] found %d flags", len(flags))
+        logger.info(
+            "[RecoupmentAgent][phase=detect] found %d flags (%d semantic)",
+            len(flags), semantic_count,
+        )
 
         # ---- Phase 2: Self-validate loop ------------------------------------
         for iteration in range(1, MAX_VALIDATE_ITERATIONS + 1):
@@ -357,7 +448,7 @@ class RecoupmentAgent:
                 amt
                 for f in flags
                 for amt in f.get("amounts_found", [])
-                if f.get("source") == "pattern"
+                if f.get("source") in ("pattern", "semantic")
             )
             net_received = round(paid_amount - clawed_back, 2)
 

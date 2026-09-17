@@ -131,7 +131,61 @@ class EscalationAgent:
         )
 
         FeedbackCalibrator.record_outcome(db, ticket)
+        self._teach_semantic_layer(ticket)
         return ticket
+
+    # ------------------------------------------------------------------
+    # Retrieval-side learning loop
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _teach_semantic_layer(ticket: HumanReview) -> int:
+        """
+        Add the approved ticket's flagged line(s) to the Moss index.
+
+        This is the retrieval counterpart to FeedbackCalibrator: dismissals
+        tighten confidence thresholds, approvals widen what the system can
+        recognise. A coordinator confirming one Anthem rewording means the next
+        EOB carrying that phrasing — from any payer — is caught on the first
+        pass instead of slipping through.
+
+        Best-effort and never raises: an unavailable Moss layer just means the
+        phrase is not learned.
+        """
+        try:
+            from agents.semantic_matcher import get_matcher
+            matcher = get_matcher()
+            if not matcher.ready:
+                return 0
+
+            context = json.loads(ticket.context_json) if ticket.context_json else {}
+            candidates = []
+            if isinstance(context.get("flag"), dict):
+                candidates.append(context["flag"])
+            if isinstance(context.get("flags"), list):
+                candidates.extend(f for f in context["flags"] if isinstance(f, dict))
+
+            learned = 0
+            for flag in candidates:
+                # Only learn genuine EOB text. Ledger-mismatch flags are
+                # synthesised sentences, not payer wording.
+                if flag.get("source") == "ledger_mismatch":
+                    continue
+                line = (flag.get("line") or "").strip()
+                if not line:
+                    continue
+                if matcher.learn(line, payer_tag=flag.get("payer_tag") or "generic"):
+                    learned += 1
+
+            if learned:
+                print(
+                    f"[EscalationAgent] taught Moss {learned} confirmed "
+                    f"clawback phrase(s) from ticket #{ticket.id}"
+                )
+            return learned
+        except Exception as exc:  # pragma: no cover - optional layer
+            print(f"[EscalationAgent] semantic learning skipped: {exc}")
+            return 0
 
     def dismiss(
         self,

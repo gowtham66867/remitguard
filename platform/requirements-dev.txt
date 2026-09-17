@@ -1,0 +1,6 @@
+# Development / evaluation dependencies.
+#   pip install -r requirements.txt -r requirements-dev.txt
+-r requirements.txt
+
+pytest>=8.0.0
+reportlab>=4.0.0        # generates the synthetic sample EOBs
