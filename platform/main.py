@@ -8,6 +8,9 @@ Run:
     uvicorn main:app --reload --port 8000
 """
 
+
+# Load platform/.env before anything reads configuration at import time.
+import load_env  # noqa: F401  (side-effecting import, must precede config reads)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -75,6 +78,13 @@ def health():
     return {"status": "ok", "service": "RemitGuard Platform"}
 
 
+@app.get("/api/industries")
+def industries():
+    """Available payment-document workflows supported by the horizontal MVP."""
+    from industry_profiles import INDUSTRY_PROFILES
+    return {"industries": INDUSTRY_PROFILES}
+
+
 @app.get("/api/semantic/stats")
 def semantic_stats():
     """
@@ -86,6 +96,27 @@ def semantic_stats():
         return get_matcher().stats()
     except Exception as exc:
         return {"enabled": False, "disabled_reason": f"{type(exc).__name__}: {exc}"}
+
+
+from api.routes.recoupment import (
+    classify_line,
+    learn_phrase,
+    run_live_eval,
+    ClassifyRequest,
+    LearnRequest,
+)
+
+@app.post("/api/semantic/classify")
+def api_semantic_classify(req: ClassifyRequest):
+    return classify_line(req)
+
+@app.post("/api/semantic/learn")
+def api_semantic_learn(req: LearnRequest):
+    return learn_phrase(req)
+
+@app.post("/api/semantic/run-eval")
+def api_semantic_eval():
+    return run_live_eval()
 
 # Serve frontend — plain HTML file (no build step needed)
 # Must be registered AFTER all /api/* routes so it doesn't shadow them.

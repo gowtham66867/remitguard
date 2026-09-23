@@ -1,0 +1,3 @@
+payer_id,payer_name,era_status,eft_status,bank_name,eft_deadline,portal,notes
+MRH-001,Meridian Regional Health Plan,missing,action_required,First National Bank,2026-09-26,payerenroll,ERA enrollment missing; EFT enrollment deadline requires coordinator action.
+BCBS-001,BlueCross BlueShield,pending,pending,Community Bank,2026-09-30,availity,ERA and EFT enrollment are pending payer confirmation.

@@ -21,6 +21,10 @@ ENV PORT=8080
 # Moss semantic recall. MOSS_PROJECT_ID / MOSS_PROJECT_KEY are injected at
 # deploy time (see deploy.sh) and are deliberately NOT baked into the image.
 # Without them the container still serves normally on the regex-only path.
+# The bundled demo EOBs. They ship in the image so the one-click comparison
+# works on a cold deployment with no uploads and no external fetch.
+ENV DEMO_ASSETS_PATH=/app/demo_assets
+
 ENV MOSS_CORPUS_PATH=/app/recoupment_corpus.json
 ENV MOSS_CACHE_PATH=/tmp/moss-index
 

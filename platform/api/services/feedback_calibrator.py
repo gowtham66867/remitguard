@@ -4,7 +4,7 @@ confidence threshold adjustments.
 
 This is the "moat compounding" mechanism: every approve/dismiss decision
 upserts FeedbackStats and recomputes per-payer threshold deltas so that
-ValidatorAgent learns from past human judgement automatically.
+ValidatorAgent learns from past human review automatically.
 
 Python 3.9 compatible. No new pip dependencies.
 """

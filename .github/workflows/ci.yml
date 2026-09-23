@@ -45,6 +45,10 @@ jobs:
         working-directory: platform
         run: python -c "import main; print('ok')"
 
+      - name: Static safety lint
+        working-directory: platform
+        run: python -m ruff check .
+
       - name: Dataset integrity (eval set held out from indexed corpus)
         working-directory: platform
         run: python -c "import eval_data; eval_data.assert_disjoint_from_corpus(); print('disjoint ok')"

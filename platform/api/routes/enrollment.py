@@ -130,7 +130,9 @@ class AlertsOut(BaseModel):
     ),
 )
 async def import_payer_csv(
-    facility_id: int = Query(..., description="Target facility ID"),
+    # A standalone demo has one seeded facility. Keep the query optional so
+    # browser-cached clients from an earlier frontend can still import safely.
+    facility_id: int = Query(1, description="Target facility ID; defaults to the demo facility"),
     file: UploadFile = File(..., description="CSV file to import"),
     db: Session = Depends(get_db),
 ) -> ImportResult:

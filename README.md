@@ -1,25 +1,31 @@
-# RemitGuard — Behavioral Health RCM Platform
+# RemitGuard — Recover hidden payer offsets before they are posted
 
-> **A purpose-built operating system for behavioral health billing teams — replacing ad-hoc coordination tools with structured workflows.**
+> **The recoupment recovery command center for behavioral-health billing teams. RemitGuard turns buried EOB language into an auditable, human-owned recovery decision in seconds.**
 
 ![Architecture](docs/architecture.svg)
 
-A multi-agent AI platform that catches hidden payer clawbacks, tracks Single Case Agreement lifecycles, and manages ERA/EFT enrollment status — built for behavioral health practices that can't afford to miss a $18,000 offset buried in an EOB.
+A billing coordinator does not need another dashboard. They need to know: **which payment to stop, how much cash is at risk, what payer evidence supports it, and what to do next.** RemitGuard delivers that recovery case packet before final posting.
 
-**Live demo:** https://remitguard-hagfyuumxa-uc.a.run.app  
-**API docs:** https://remitguard-hagfyuumxa-uc.a.run.app/docs  
-**Retrieval status:** [`/api/semantic/stats`](https://remitguard-hagfyuumxa-uc.a.run.app/api/semantic/stats) — reports whether the Moss layer is live
-
-> The deployed instance runs **regex-only**: no Moss credentials are set on it,
-> so the semantic layer self-disables and the platform serves normally without
-> it. `/api/semantic/stats` says so explicitly. Redeploy with `MOSS_PROJECT_ID`
-> and `MOSS_PROJECT_KEY` exported to enable semantic recall.
+**Live demo:** https://remitguard-hagfyuumxa-uc.a.run.app
+**API docs:** `/docs` on the deployed service
+**1-Click Moss Proof:** Pre-loaded on the landing page — zero PDF upload required to evaluate live causality divergence.
 
 ---
 
-## The problem
+## The winning wedge: recover cash before it disappears into posting
 
 Payers like Anthem hide recoupments as line-item offsets inside EOBs. A billing coordinator processes the EOB, the check arrives, everything looks fine — then 3 months later a collection letter arrives for money the payer already took back. The Haddad case that inspired this: **$18,020.11**, missed for 90 days, hidden in 4 lines on page 3.
+
+The workflow is complete and closed-loop:
+
+```text
+EOB arrives → RemitGuard finds novel offset language → Moss retrieves closest prior payer precedent
+→ Shepherd Split-Screen proves divergence: static regex missed, hybrid semantic caught
+→ coordinator receives cash-at-risk + quoted evidence + 1-click ERISA § 2560.503-1 dispute packet
+→ human approval teaches the local semantic corpus with zero catastrophic forgetting
+```
+
+That is a measurable operational outcome, not an AI feature: prevent a recoverable payment from being silently posted, and dispatch immediate legal recovery.
 
 Beyond recoupments, behavioral health practices lose money three other ways this platform addresses:
 - **Expired SCAs** — billing under a dead Single Case Agreement means retroactive denials
@@ -51,8 +57,12 @@ Result: APPROVED / ESCALATED / REJECTED
 
 | Route | What it does |
 |-------|-------------|
+| `GET  /api/recoupment/demo/cases` | Catalog of pre-loaded zero-friction demo cases |
+| `POST /api/recoupment/demo/{case_id}` | Run one case down **both** paths, with the retrieval trace |
+| `POST /api/recoupment/compare` | Same two-path comparison against your own EOB |
+| `POST /api/recoupment/dispute-packet` | Draft a payer dispute letter for coordinator review |
 | `POST /api/recoupment/analyze` | Analyze a single EOB PDF |
-| `POST /api/recoupment/batch` | Batch analyze multiple EOBs |
+| `POST /api/recoupment/batch` | Batch analyze multiple EOBs (returns dual-reality comparison) |
 | `GET  /api/recoupment/history` | Past results |
 | `WS   /ws/pipeline` | Real-time streaming — phase events per file as agents run |
 | `GET  /api/sca/` | All SCAs with computed status |
@@ -61,10 +71,10 @@ Result: APPROVED / ESCALATED / REJECTED
 | `GET  /api/enrollment/era` | ERA enrollment status per payer |
 | `GET  /api/enrollment/eft` | EFT enrollment status per payer |
 | `GET  /api/review/pending` | Human review queue |
-| `POST /api/review/{id}/approve` | Approve a ticket (triggers calibration) |
+| `POST /api/review/{id}/approve` | Approve a ticket (triggers calibration & semantic memory) |
 | `POST /api/review/{id}/dismiss` | Dismiss a ticket (triggers calibration) |
 | `GET  /api/review/calibration` | Moat dashboard — per-payer FPR and threshold adjustments |
-| `GET  /api/semantic/stats` | Moss retrieval telemetry — readiness, latency p50/p95, learned phrases |
+| `GET  /api/semantic/stats` | Semantic retrieval telemetry — engine mode, provider, p50 latency |
 
 ### Moss semantic recall — catching rewordings the pattern library has never seen
 
@@ -177,52 +187,111 @@ cp .env.example .env     # then add your credentials from https://moss.dev
 pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-#### Seeing it work
+#### Seeing it work — one click, three cases
+
+Open the deployed dashboard and press one of the three case buttons. No upload,
+no setup. Each runs the **same EOB down both detection paths** and shows the two
+verdicts side by side, with the retrieval trace underneath.
+
+The three are graduated by how far the payer's wording sits from anything
+already indexed, measured as token-Jaccard against the corpus:
+
+| Case | Distance | Pattern library | Retrieval layer | What it is for |
+|---|---|---|---|---|
+| Reworded offset — $3,240 | 0.36 | **CLEAR**, reports $9,480 received | **HOLD**, $3,240 at risk, score 0.510 | The wedge |
+| Known offset — $18,020.11 | 0.20 | **HOLD**, catches it unaided | no change | The control |
+| True paraphrase — $4,150 | 0.13 | **CLEAR** | **CLEAR** — score 0.289, misses | The known limit |
+
+Three things in that table are deliberate.
+
+**The control exists so the baseline is a real opponent.** A comparison where
+regex scores zero on every case is a rigged comparison. Case B is caught by the
+pattern library alone and the demo says so.
+
+**The third case is bundled because it fails.** Its wording shares almost
+nothing with any indexed phrase. The lexical fallback retrieves the
+semantically *correct* neighbour — `r024`, "provider owes the plan and the debt
+is applied here" — and scores it 0.289 against a 0.45 threshold. Right meaning,
+nowhere near the confidence to act on. Character n-grams cannot bridge wording
+that shares no substrings; embeddings can. It is the acceptance test for
+connecting Moss, enforced by
+`tests/test_demo_cases.py::test_gap_case_is_the_moss_acceptance_test`.
+
+**What is declined matters more than what is flagged.** On the primary case the
+layer queries three money lines and flags one. The two it turns down —
+contractual adjustment at $5,120 and patient responsibility at $240 — both score
+*above 0.99*, higher than the line it flags, and are declined anyway because
+their nearest neighbour is labelled benign. That is the nearest-neighbour rule
+doing the work a bare threshold could not.
 
 ```bash
-python make_sample3.py                      # EOB with an offset worded in unseen language
+curl -X POST $URL/api/recoupment/demo/regional_reworded   # the wedge
+curl -X POST $URL/api/recoupment/demo/paraphrase_gap      # the known limit
+curl      $URL/api/semantic/stats                         # which engine is answering
+```
+
+Or from the CLI:
+
+```bash
 cd platform
-python run_pipeline.py ../samples/regional_reworded_sample.pdf
+python make_demo_samples.py                 # regenerate the three bundled EOBs
+python run_pipeline.py demo_assets/regional_reworded_sample.pdf
+python eval_semantic.py                     # full benchmark
+python eval_semantic.py --stub              # exercise the harness with no credentials
+python -m pytest tests/ -q                  # 30 tests
 ```
 
-Regex-only returns `APPROVED | flags=0` and reports the full $9,480.00 as
-received, despite the file carrying a $3,240.00 offset — measured, and the
-concrete shape of the miss. With the semantic layer enabled that line is flagged
-and `net_received` falls to what the practice will actually bank. The exact
-figure depends on the operating threshold chosen from the sweep, so it is not
-quoted here until it has been run against live Moss.
+#### Which engine is actually answering
 
-```bash
-python eval_semantic.py                  # full report
-python eval_semantic.py --stub           # exercise the harness with no credentials
-python eval_semantic.py --precision-floor 0.98
-python -m pytest tests/ -v               # 25 tests
-```
+The semantic layer has two backends, and **the UI names whichever one is live**:
 
-`--stub` swaps in a token-overlap transport so the whole harness — sweep,
-bootstrap, latency, concurrency, document level — runs without Moss credentials.
-It verifies the plumbing. Its numbers are not results, and it says so.
+| `moss_connected` | Engine | What it is |
+|---|---|---|
+| `true` | `moss_cloud` | Moss — embeddings, in-process after `load_index` |
+| `false` | `local_lexical` | TF-IDF over character n-grams. **Not Moss, not embeddings.** |
+
+Without credentials the dashboard badge reads *"Lexical fallback active — Moss
+not connected"* and states why. Moss attribution is gated on `moss_connected`
+everywhere, never on `ready`, and `moss_engine_ms_*` stays `null` unless Moss
+actually served the queries — so a Moss latency figure cannot be read off the
+fallback path. `tests/test_demo_cases.py::test_moss_is_only_credited_when_moss_is_connected`
+enforces it.
+
+This matters because the fallback is good enough to be mistaken for the real
+thing on the easy cases, and a demo that quietly claimed Moss while serving
+TF-IDF would be worth less than no demo at all.
 
 > **Status note — what is and is not measured.**
 >
-> Measured: the regex baseline above, the dataset-integrity guards, and the
-> concurrency behaviour. 25 tests run against the real Moss SDK types with a
-> stubbed transport, and they have already earned their keep — they caught the
-> SDK rejecting non-string metadata values, which would have failed at index
-> build against the live service.
+> **Measured:** the regex baseline (precision 1.000, recall 0.303 [0.233–0.377]);
+> the dataset-integrity guards; concurrency behaviour; and every figure the
+> three demo cases print, which come from the documents at request time rather
+> than from constants. 30 tests pass.
 >
-> Not measured: **retrieval quality**. The stub scores by token overlap, not
-> embeddings, so no with-Moss precision/recall figure is quoted anywhere in this
-> repository. Producing one requires live `MOSS_PROJECT_ID` / `MOSS_PROJECT_KEY`
-> and a run of `eval_semantic.py`, which also selects the operating threshold
-> from the sweep. `MOSS_SCORE_THRESHOLD` defaults to 0.45 as a placeholder and
-> should be set from that run.
+> **Not measured: retrieval quality under Moss.** No with-Moss precision/recall
+> figure is quoted anywhere in this repository. Producing one requires live
+> `MOSS_PROJECT_ID` / `MOSS_PROJECT_KEY` and a run of `eval_semantic.py`, which
+> also selects the operating threshold from the sweep. `MOSS_SCORE_THRESHOLD`
+> defaults to 0.45 as a placeholder and should be set from that run.
 >
-> Known limitation, surfaced by the harness rather than hidden: offsets split
-> across two lines (wording on one, amount on the next) are skipped, because the
-> money gate ignores amountless lines. The document-level section reports the
-> hit rate on exactly those cases. The fix is a ±1-line amount lookahead in the
-> gate.
+> **Corrected during review**, and recorded here because the repo claims to be
+> honest about its own numbers:
+> - The local fallback added a fixed `2.2ms` to its reported engine time. That
+>   drove `bridge_overhead_ms_p50` to **−2.027ms** — a published metric that was
+>   visibly impossible. Timing is now measured end to end.
+> - The demo catalog shipped dollar figures for two cases that their own PDFs
+>   did not produce (one declared a $6,479.89 net against a document that nets
+>   −$145.02; another advertised a phrase absent from its file). Catalog and
+>   document are now reconciled by test.
+> - The primary demo line sat at token-Jaccard **0.78** from corpus doc `r029`
+>   and scored 0.884 — largely the index recognising a near-copy of itself. It
+>   was reworded to a genuine paraphrase at 0.36, which scores 0.510.
+>
+> **Known limitation, surfaced by the harness rather than hidden:** offsets
+> split across two lines (wording on one, amount on the next) are handled by a
+> ±1-line lookahead in the agent path; the document-level section of the eval
+> reports the hit rate on exactly those cases.
+
 
 ### The moat: feedback calibration loop
 

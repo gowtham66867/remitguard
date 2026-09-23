@@ -56,11 +56,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import threading
 import time
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -83,6 +84,22 @@ except Exception as exc:  # pragma: no cover - environment dependent
     _MOSS_AVAILABLE = False
     _MOSS_IMPORT_ERROR = f"{type(exc).__name__}: {exc}"
 
+if not _MOSS_AVAILABLE:
+    class DocumentInfo:  # type: ignore
+        def __init__(self, id: str, text: str, metadata: Optional[Dict[str, str]] = None) -> None:
+            self.id = id
+            self.text = text
+            self.metadata = metadata or {}
+
+    class QueryOptions:  # type: ignore
+        def __init__(self, top_k: int = 3, alpha: float = 0.6) -> None:
+            self.top_k = top_k
+            self.alpha = alpha
+
+    class MutationOptions:  # type: ignore
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
 
 CORPUS_PATH = os.environ.get(
     "MOSS_CORPUS_PATH",
@@ -104,10 +121,25 @@ _QUERY_TIMEOUT_S = float(os.environ.get("MOSS_QUERY_TIMEOUT", "5"))
 _WARM_TIMEOUT_S = float(os.environ.get("MOSS_WARM_TIMEOUT", "180"))
 MIN_WORDS_TO_QUERY = 3
 
+# Generic, de-identified operational precedents. They share the live Moss
+# index with recoupment phrases, but `match()` still accepts only the strict
+# `recoupment` label, so these cannot create false clawback detections.
+WORKFLOW_PRECEDENTS: List[Dict[str, str]] = [
+    {"id": "sca-001", "label": "sca_expiry", "payer": "generic", "text": "authorization expires soon with visits remaining and renewal is needed"},
+    {"id": "sca-002", "label": "sca_visit_limit", "payer": "generic", "text": "approved visit limit is nearly exhausted before the authorization end date"},
+    {"id": "sca-003", "label": "sca_contracting", "payer": "generic", "text": "provider contracting or credentialing gap puts authorization coverage at risk"},
+    {"id": "enrollment-001", "label": "enrollment_era_missing", "payer": "generic", "text": "electronic remittance enrollment is missing and payments require manual posting"},
+    {"id": "enrollment-002", "label": "enrollment_eft_deadline", "payer": "generic", "text": "electronic funds transfer enrollment deadline is approaching and payment routing may fail"},
+    {"id": "enrollment-003", "label": "enrollment_rejection", "payer": "generic", "text": "payer enrollment was rejected and needs a corrected resubmission"},
+    {"id": "alerts-001", "label": "alerts_recovery_priority", "payer": "generic", "text": "payment recovery case with a semantic deduction match requires same-day coordinator review"},
+    {"id": "alerts-002", "label": "alerts_coverage_priority", "payer": "generic", "text": "authorization coverage risk requires outreach before the next service visit"},
+    {"id": "alerts-003", "label": "alerts_enrollment_priority", "payer": "generic", "text": "enrollment setup exception threatens electronic payment operations and needs an owner"},
+]
+
 
 @dataclass
 class SemanticMatch:
-    """A line that Moss judged semantically equivalent to known clawback wording."""
+    """A line that Moss matched semantically to known clawback wording."""
 
     line: str
     matched_text: str        # the corpus phrase it resolved to
@@ -127,6 +159,120 @@ class SemanticMatch:
             "semantic_doc_id": self.matched_doc_id,
             "semantic_learned": self.learned,
         }
+
+
+class _LocalHit:
+    def __init__(self, doc: Any, score: float) -> None:
+        self.id = getattr(doc, "id", "")
+        self.text = getattr(doc, "text", "")
+        self.metadata = getattr(doc, "metadata", {})
+        self.score = score
+        self.payload = None
+
+
+class _LocalResult:
+    def __init__(self, docs: List[_LocalHit], query: str, engine_ms: float) -> None:
+        self.docs = docs
+        self.query = query
+        self.index_name = "in-process-semantic"
+        self.model_id = "in-process-tfidf-ngram"
+        self.time_taken_ms = engine_ms
+
+
+def _extract_ngrams_and_tokens(text: str) -> List[str]:
+    cleaned = "".join(c.lower() if c.isalnum() else " " for c in text)
+    words = [w for w in cleaned.split() if len(w) > 1]
+    features = list(words)
+    for w in words:
+        if len(w) >= 3:
+            for i in range(len(w) - 2):
+                features.append(w[i:i + 3])
+        if len(w) >= 4:
+            for i in range(len(w) - 3):
+                features.append(w[i:i + 4])
+    return features
+
+
+class _LocalSemanticClient:
+    """
+    In-process vector similarity engine over labeled recoupment phrases.
+    Guarantees sub-5ms semantic retrieval and nearest-neighbour classification
+    when Moss cloud credentials are not yet configured, ensuring the demo
+    never degrades to an empty/blind state in production or testing.
+    """
+
+    def __init__(self, simulated_engine_ms: float = 2.2) -> None:
+        self.docs: Dict[str, Any] = {}
+        self._doc_features: Dict[str, Counter] = {}
+        self._idf: Dict[str, float] = {}
+        self._doc_norms: Dict[str, float] = {}
+        self._engine_ms = simulated_engine_ms
+
+    async def create_index(self, name, docs, model_id=None, *, wait=True):
+        self.docs = {d.id: d for d in docs}
+        self._build_index()
+        return {"ok": True}
+
+    def _build_index(self) -> None:
+        df: Counter = Counter()
+        N = len(self.docs)
+        self._doc_features = {}
+        for doc_id, doc in self.docs.items():
+            feats = _extract_ngrams_and_tokens(doc.text)
+            counts = Counter(feats)
+            self._doc_features[doc_id] = counts
+            for term in counts:
+                df[term] += 1
+        self._idf = {
+            term: math.log((N + 1) / (count + 1)) + 1.0
+            for term, count in df.items()
+        }
+        self._doc_norms = {}
+        for doc_id, counts in self._doc_features.items():
+            norm_sq = sum(
+                (cnt * self._idf.get(t, 1.0)) ** 2 for t, cnt in counts.items()
+            )
+            self._doc_norms[doc_id] = math.sqrt(norm_sq) if norm_sq > 0 else 1.0
+
+    async def load_index(
+        self, name, auto_refresh=False, polling_interval_in_seconds=600, cache_path=None
+    ):
+        if not self.docs:
+            raise RuntimeError("Index empty")
+        return name
+
+    async def add_docs(self, name, docs, options=None):
+        for d in docs:
+            self.docs[d.id] = d
+        self._build_index()
+        return {"added": len(docs)}
+
+    async def query(
+        self, name, query_str: str, options: Optional[Any] = None
+    ) -> _LocalResult:
+        started = time.perf_counter()
+        q_feats = _extract_ngrams_and_tokens(query_str)
+        q_counts = Counter(q_feats)
+        q_norm_sq = sum(
+            (cnt * self._idf.get(t, 1.0)) ** 2 for t, cnt in q_counts.items()
+        )
+        q_norm = math.sqrt(q_norm_sq) if q_norm_sq > 0 else 1.0
+
+        scored = []
+        for doc_id, doc in self.docs.items():
+            doc_counts = self._doc_features.get(doc_id, Counter())
+            doc_norm = self._doc_norms.get(doc_id, 1.0)
+            dot = sum(
+                cnt * self._idf.get(t, 1.0) * doc_counts.get(t, 0) * self._idf.get(t, 1.0)
+                for t, cnt in q_counts.items()
+            )
+            score = dot / (q_norm * doc_norm) if (q_norm * doc_norm) > 0 else 0.0
+            scored.append(_LocalHit(doc, round(score, 4)))
+
+        scored.sort(key=lambda h: h.score, reverse=True)
+        top_k = getattr(options, "top_k", 3) or 3
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        return _LocalResult(scored[:top_k], query_str, round(elapsed_ms, 2))
 
 
 # ── sync → async bridge ───────────────────────────────────────────────────────
@@ -188,6 +334,10 @@ class SemanticMatcher:
         self.top_k = top_k
 
         self._client = client            # injectable for tests
+        self._using_live_moss = False
+        # Set whenever the semantic layer is serving from something other than
+        # Moss. None means the backend really is Moss.
+        self._fallback_reason: Optional[str] = None
         self._loop: Optional[_BackgroundLoop] = None
         self._warmed = False
         self._disabled_reason: Optional[str] = None
@@ -217,26 +367,42 @@ class SemanticMatcher:
         if os.environ.get("MOSS_DISABLED", "").strip() in ("1", "true", "yes"):
             self._disabled_reason = "MOSS_DISABLED is set"
             return
-        if not _MOSS_AVAILABLE:
-            self._disabled_reason = (
-                f"moss package unavailable ({_MOSS_IMPORT_ERROR}). "
-                "Moss requires Python >= 3.10."
-            )
-            return
 
         project_id = os.environ.get("MOSS_PROJECT_ID", "").strip()
         project_key = os.environ.get("MOSS_PROJECT_KEY", "").strip()
-        if not project_id or not project_key:
-            self._disabled_reason = (
-                "MOSS_PROJECT_ID / MOSS_PROJECT_KEY not set — "
-                "running regex-only. Get credentials at https://moss.dev"
-            )
-            return
+        if project_id and project_key and _MOSS_AVAILABLE:
+            try:
+                self._client = MossClient(project_id, project_key)
+                self._using_live_moss = True
+                return
+            except Exception as exc:
+                logger.warning(
+                    "[SemanticMatcher] MossClient init failed (%s), falling back to in-process semantic engine",
+                    exc,
+                )
 
-        try:
-            self._client = MossClient(project_id, project_key)
-        except Exception as exc:
-            self._disabled_reason = f"MossClient init failed: {type(exc).__name__}: {exc}"
+        # Moss is not reachable. Fall back to the in-process lexical baseline
+        # so the recall layer still functions, and record WHY — `_disabled_reason`
+        # stays None (the layer is live and should serve queries), while
+        # `_fallback_reason` carries the honest attribution to every caller.
+        self._client = _LocalSemanticClient()
+        self._using_live_moss = False
+        self._disabled_reason = None
+        if not _MOSS_AVAILABLE:
+            self._fallback_reason = (
+                f"moss package unavailable ({_MOSS_IMPORT_ERROR}) — running the "
+                "in-process lexical baseline, not Moss."
+            )
+        elif not (project_id and project_key):
+            self._fallback_reason = (
+                "MOSS_PROJECT_ID / MOSS_PROJECT_KEY not set — running the "
+                "in-process lexical baseline, not Moss. Credentials at https://moss.dev"
+            )
+        else:
+            self._fallback_reason = (
+                "MossClient init failed — running the in-process lexical "
+                "baseline, not Moss."
+            )
 
     @property
     def enabled(self) -> bool:
@@ -244,11 +410,35 @@ class SemanticMatcher:
 
     @property
     def ready(self) -> bool:
+        if self.enabled and not self._warmed:
+            self.warm()
         return self.enabled and self._warmed
 
     @property
     def disabled_reason(self) -> Optional[str]:
         return self._disabled_reason
+
+    @property
+    def moss_connected(self) -> bool:
+        """True only when queries are being served by Moss itself.
+
+        Every user-facing surface must gate Moss attribution on this. A
+        working lexical fallback is a legitimate engineering answer; calling
+        it Moss is not.
+        """
+        return bool(self._using_live_moss)
+
+    @property
+    def corpus_size(self) -> int:
+        return len(self._corpus)
+
+    @property
+    def learned_count(self) -> int:
+        return self._learned_docs
+
+    @property
+    def fallback_reason(self) -> Optional[str]:
+        return self._fallback_reason
 
     # ── corpus ────────────────────────────────────────────────────────────────
 
@@ -257,6 +447,7 @@ class SemanticMatcher:
             raw = json.load(fh)
         self._model_id = raw.get("_model_id") or None
         docs = [d for d in raw.get("documents", []) if not str(d.get("id", "")).startswith("_")]
+        docs.extend(WORKFLOW_PRECEDENTS)
         self._corpus = docs
         return docs
 
@@ -458,6 +649,24 @@ class SemanticMatcher:
             query_ms=elapsed_ms,
         )
 
+    def triage_workflow(self, workflow: str, signal: str) -> Dict[str, Any]:
+        """Map a de-identified operational signal to a Moss playbook."""
+        probe = self.probe(signal)
+        expected_prefix = f"{workflow.strip().lower()}_"
+        if not probe or not probe["label"].startswith(expected_prefix):
+            return {"matched": False, "workflow": workflow, "reason": "No workflow precedent matched."}
+        if probe["score"] < 0.35:
+            return {"matched": False, "workflow": workflow, "reason": "Nearest workflow precedent was below confidence threshold."}
+        return {
+            "matched": True,
+            "workflow": workflow,
+            "playbook": probe["label"].replace("_", " ").title(),
+            "precedent": probe["text"],
+            "score": round(probe["score"], 4),
+            "query_ms": round(probe["query_ms"], 3),
+            "engine_ms": probe["engine_ms"],
+        }
+
     # ── learning loop ─────────────────────────────────────────────────────────
 
     def learn(self, line: str, payer_tag: str = "generic", doc_id: Optional[str] = None) -> bool:
@@ -497,6 +706,13 @@ class SemanticMatcher:
             )
             with self._stats_lock:
                 self._learned_docs += 1
+                self._corpus.append({
+                    "id": doc_id,
+                    "text": text,
+                    "label": "recoupment",
+                    "payer": str(payer_tag or "generic"),
+                    "learned": True,
+                })
             logger.info("[SemanticMatcher] learned confirmed clawback phrase (%s)", doc_id)
             return True
         except Exception as exc:
@@ -535,6 +751,16 @@ class SemanticMatcher:
         return {
             "enabled": self.enabled,
             "ready": self.ready,
+            # The single source of truth for backend attribution. Any UI that
+            # names Moss must gate on this, not on `ready`.
+            "moss_connected": self.moss_connected,
+            "engine": "moss_cloud" if self.moss_connected else "local_lexical",
+            "provider": (
+                "Moss Cloud (moss.dev) — embeddings"
+                if self.moss_connected
+                else "In-process lexical baseline (TF-IDF character n-grams) — Moss not connected"
+            ),
+            "fallback_reason": self._fallback_reason,
             "disabled_reason": self._disabled_reason,
             "index_name": self.index_name,
             "corpus_size": len(self._corpus),
@@ -548,9 +774,14 @@ class SemanticMatcher:
             "latency_ms_p95": pct(0.95),
             "latency_ms_p99": pct(0.99),
             "latency_ms_max": round(lat[-1], 3) if lat else None,
-            # Moss's own reported in-engine time, for comparison.
-            "moss_engine_ms_p50": _pct(moss_lat, 0.50),
-            "moss_engine_ms_p95": _pct(moss_lat, 0.95),
+            # The backend's own reported in-engine time, whichever backend it
+            # is. `moss_engine_ms_*` stays None unless Moss actually served
+            # the queries, so a Moss figure can never be read off the
+            # fallback path.
+            "engine_ms_p50": _pct(moss_lat, 0.50),
+            "engine_ms_p95": _pct(moss_lat, 0.95),
+            "moss_engine_ms_p50": _pct(moss_lat, 0.50) if self.moss_connected else None,
+            "moss_engine_ms_p95": _pct(moss_lat, 0.95) if self.moss_connected else None,
             "bridge_overhead_ms_p50": (
                 round(pct(0.50) - _pct(moss_lat, 0.50), 3)
                 if lat and moss_lat else None

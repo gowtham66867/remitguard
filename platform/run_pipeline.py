@@ -16,6 +16,9 @@ Then to action the human review queue:
     python run_pipeline.py --dismiss 1 "False pos" # dismiss ticket #1
 """
 
+
+# Load platform/.env before anything reads configuration at import time.
+import load_env  # noqa: F401  (side-effecting import, must precede config reads)
 import sys
 import os
 import argparse

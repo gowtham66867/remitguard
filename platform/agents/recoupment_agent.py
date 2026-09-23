@@ -42,6 +42,7 @@ PATTERNS_PATH = _os.environ.get(
 MONEY_RE = re.compile(r"\$?\(?-?\s?[\d,]+\.\d{2}\)?")
 CLAIM_NUM_RE = re.compile(r"(?i:claim)\s*#?\s*[:\-]?\s*([A-Z0-9]{6,}(?=[\s,.\n]|$))")
 DOS_RE = re.compile(r"\bDOS\b\s*[:\-]?\s*(\d{1,2}/\d{1,2}/\d{2,4})", re.IGNORECASE)
+_WORD_RE = re.compile(r"[A-Za-z]{2,}")
 
 CONFIDENCE_THRESHOLD = 0.5
 MAX_VALIDATE_ITERATIONS = 2
@@ -129,12 +130,24 @@ def _detect_flags(
     latency) on a typical EOB at the same time. Regex matching is unaffected.
     """
     flags: List[Dict] = []
-    for line in text.splitlines():
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
         matched = False
+        amounts = _extract_amounts(line)
+        # ±1-line lookahead/lookbehind for amounts split across lines (common in multi-column tables):
+        if not amounts:
+            if i + 1 < len(lines):
+                next_amounts = _extract_amounts(lines[i + 1])
+                if next_amounts and len(_WORD_RE.findall(lines[i + 1])) <= 2:
+                    amounts = next_amounts
+            if not amounts and i > 0:
+                prev_amounts = _extract_amounts(lines[i - 1])
+                if prev_amounts and len(_WORD_RE.findall(lines[i - 1])) <= 2:
+                    amounts = prev_amounts
+
         for tag, regex in compiled.items():
             match = regex.search(line)
             if match:
-                amounts = _extract_amounts(line)
                 flags.append({
                     "line": line.strip(),
                     "matched_phrase": match.group(0),
@@ -151,7 +164,6 @@ def _detect_flags(
             continue
 
         # ── semantic recall pass ──────────────────────────────────────────────
-        amounts = _extract_amounts(line)
         if semantic_requires_amount and not amounts:
             continue
 

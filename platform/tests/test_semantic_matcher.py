@@ -57,7 +57,7 @@ def test_warm_creates_then_loads_index(matcher):
     assert len(stub.created) == 1
     name, model_id, count = stub.created[0]
     assert model_id == "moss-minilm"      # read from the corpus file
-    assert count == 70                    # 40 recoupment + 30 benign
+    assert count == 79                    # 40 recoupment + 30 benign + 9 workflow precedents
     assert stub.loaded == [name]
     assert matcher.ready
 
@@ -124,7 +124,7 @@ def test_stats_reports_latency_percentiles(matcher):
     assert stats["queries"] >= 5
     assert stats["latency_ms_p50"] is not None
     assert stats["latency_ms_p95"] is not None
-    assert stats["corpus_size"] == 70
+    assert stats["corpus_size"] == 79
 
 
 def test_query_failure_degrades_to_none(matcher):
@@ -136,15 +136,30 @@ def test_query_failure_degrades_to_none(matcher):
     assert "unreachable" in matcher.stats()["last_error"]
 
 
-def test_disabled_without_credentials(monkeypatch):
+def test_falls_back_without_credentials_and_says_so(monkeypatch):
+    """No credentials means no MOSS — not no retrieval.
+
+    This test used to assert the whole layer switched off. It no longer does:
+    an in-process lexical baseline takes over so the workflow keeps a recall
+    layer. The contract that matters now is attribution — the layer runs, and
+    it is explicit that Moss is not the thing running it.
+    """
     for var in ("MOSS_PROJECT_ID", "MOSS_PROJECT_KEY"):
         monkeypatch.delenv(var, raising=False)
     m = SemanticMatcher()
-    assert m.enabled is False
-    assert m.ready is False
-    assert m.match("Amount recouped from this payment  940.55") is None
-    assert m.warm() is False
-    assert "MOSS_PROJECT_ID" in m.disabled_reason
+
+    # The layer is live...
+    assert m.enabled is True
+    assert m.disabled_reason is None
+
+    # ...but it is emphatically not Moss, and it says which engine it is.
+    assert m.moss_connected is False
+    assert m.fallback_reason and "not Moss" in m.fallback_reason
+    stats = m.stats()
+    assert stats["engine"] == "local_lexical"
+    assert "not connected" in stats["provider"].lower()
+    # No Moss latency figure may be published off the fallback path.
+    assert stats["moss_engine_ms_p50"] is None
 
 
 def test_force_disabled_env(monkeypatch):
@@ -321,6 +336,31 @@ def test_probe_respects_the_prefilter(matcher):
     before = matcher.stats()["queries"]
     assert matcher.probe("$12.00") is None
     assert matcher.stats()["queries"] == before
+
+
+@pytest.mark.parametrize(
+    ("workflow", "signal", "expected_playbook"),
+    [
+        ("alerts", "payment recovery case with a semantic deduction match requires same-day coordinator review", "Alerts Recovery Priority"),
+        ("sca", "authorization expires soon with visits remaining and renewal is needed", "Sca Expiry"),
+        ("enrollment", "electronic funds transfer enrollment deadline is approaching and payment routing may fail", "Enrollment Eft Deadline"),
+    ],
+)
+def test_workflow_triage_uses_the_moss_precedent_index(matcher, workflow, signal, expected_playbook):
+    """Every auxiliary tab must retrieve an appropriate Moss playbook."""
+    result = matcher.triage_workflow(workflow, signal)
+    assert result["matched"] is True
+    assert result["playbook"] == expected_playbook
+    assert result["score"] >= 0.35
+
+
+def test_workflow_triage_rejects_a_precedent_from_another_workflow(matcher):
+    """An enrollment phrase must not be presented as an SCA recommendation."""
+    result = matcher.triage_workflow(
+        "sca",
+        "electronic funds transfer enrollment deadline is approaching and payment routing may fail",
+    )
+    assert result["matched"] is False
 
 
 # ── invariant ─────────────────────────────────────────────────────────────────

@@ -269,7 +269,12 @@ def list_scas(
 def delete_sca(
     sca_id: int,
     db: Session = Depends(get_db),
-) -> None:
+):
+    # No return annotation on purpose. This module uses
+    # `from __future__ import annotations`, so `-> None` reaches FastAPI as
+    # the string "None"; FastAPI resolves that into a response model and then
+    # refuses it, because a 204 may not carry a body. The app fails to import
+    # entirely. Leaving the annotation off keeps the route bodiless.
     """
     Permanently removes the SCA record.  Returns **204** on success,
     **404** when the record does not exist.

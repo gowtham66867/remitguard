@@ -38,6 +38,9 @@ Usage:
 
 from __future__ import annotations
 
+# Load platform/.env before anything reads configuration at import time.
+import load_env  # noqa: F401  (side-effecting import, must precede config reads)
+
 import argparse
 import json
 import os

@@ -13,12 +13,22 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-import pdfplumber
-from sqlalchemy.orm import Session
-
-from ..models.recoupment import RecoupmentResult, RecoupmentFlag as RecoupmentFlagModel
+try:
+    import pdfplumber
+    _PDFPLUMBER_AVAILABLE = True
+except ImportError:
+    _PDFPLUMBER_AVAILABLE = False
+try:
+    from sqlalchemy.orm import Session
+    from ..models.recoupment import RecoupmentResult, RecoupmentFlag as RecoupmentFlagModel
+    _DB_AVAILABLE = True
+except (ImportError, ValueError):
+    Session = Any  # type: ignore
+    RecoupmentResult = Any  # type: ignore
+    RecoupmentFlagModel = Any  # type: ignore
+    _DB_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +41,7 @@ PATTERNS_PATH = _os.environ.get(
 MONEY_RE = re.compile(r"\$?\(?-?\s?[\d,]+\.\d{2}\)?")
 CLAIM_NUM_RE = re.compile(r"(?i:claim)\s*#?\s*[:\-]?\s*([A-Z0-9]{6,}(?=[\s,.\n]|$))")
 DOS_RE = re.compile(r"\bDOS\b\s*[:\-]?\s*(\d{1,2}/\d{1,2}/\d{2,4})", re.IGNORECASE)
+_WORD_RE = re.compile(r"[A-Za-z]{2,}")
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +54,10 @@ class _Flag:
     matched_phrase: str
     payer_tag: str
     amounts_found: List[float] = field(default_factory=list)
-    source: str = "pattern"  # "pattern" | "ledger_mismatch"
+    source: str = "pattern"  # "pattern" | "semantic" | "ledger_mismatch"
+    semantic_score: Optional[float] = None
+    semantic_doc_id: Optional[str] = None
+    semantic_learned: bool = False
 
 
 @dataclass
@@ -64,22 +78,149 @@ class _EOBResult:
         if not self.flags:
             return self.paid_amount
         clawed_back = sum(
-            amt
+            abs(amt)
             for f in self.flags
             for amt in f.amounts_found
-            if f.source == "pattern"
+            if f.source in ("pattern", "semantic")
         )
         return round(self.paid_amount - clawed_back, 2)
+
+    @property
+    def recoupment_amount(self) -> float:
+        """Dollar value requiring a coordinator decision.
+
+        EOBs express an offset as either a positive adjustment line or a
+        parenthesised/negative amount.  The operational question is always
+        "how much cash is at risk?", so the UI deliberately reports the
+        absolute value.  Ledger mismatches are included because they need the
+        same reconciliation workflow even when the EOB does not name an
+        offset explicitly.
+        """
+        return round(sum(
+            abs(amount)
+            for flag in self.flags
+            for amount in flag.amounts_found
+        ), 2)
+
+    @property
+    def recovery_case(self) -> dict:
+        """Return the compact, auditable work packet a biller needs next."""
+        if not self.flags:
+            return {
+                "decision": "CLEAR",
+                "recovery_at_risk": 0.0,
+                "recommended_action": "No recoupment language detected. Post normally.",
+                "evidence_count": 0,
+            }
+
+        sources = {flag.source for flag in self.flags}
+        if sources == {"ledger_mismatch"}:
+            action = "Reconcile the payment against the submitted claims ledger before posting."
+        else:
+            action = (
+                "Hold final posting and route this EOB to a billing coordinator "
+                "with the highlighted payer-language evidence."
+            )
+        return {
+            "decision": "HUMAN_REVIEW",
+            "recovery_at_risk": self.recoupment_amount,
+            "recommended_action": action,
+            "evidence_count": len(self.flags),
+        }
+
+    @property
+    def comparison(self) -> dict:
+        """Dual reality comparison: Regex Baseline vs. RemitGuard + Moss Semantic Recall."""
+        regex_flags = [f for f in self.flags if f.source != "semantic"]
+        semantic_flags = [f for f in self.flags if f.source == "semantic"]
+
+        regex_recoupment = round(
+            sum(abs(amt) for f in regex_flags for amt in f.amounts_found), 2
+        )
+        regex_flagged = bool(regex_flags)
+        regex_net = (
+            round(self.paid_amount - regex_recoupment, 2)
+            if self.paid_amount is not None
+            else None
+        )
+
+        moss_recoupment = self.recoupment_amount
+        moss_flagged = bool(self.flags)
+        moss_net = self.net_received
+
+        diverged = bool(semantic_flags)
+        cash_at_risk_uncovered = round(moss_recoupment - regex_recoupment, 2)
+
+        nearest_precedent = None
+        top_score = None
+        if semantic_flags:
+            top_sem = max(semantic_flags, key=lambda f: f.semantic_score or 0.0)
+            nearest_precedent = top_sem.matched_phrase
+            top_score = top_sem.semantic_score
+
+        return {
+            "baseline_regex": {
+                "status": (
+                    "APPROVED (SILENT CLAWBACK MISSED)"
+                    if diverged
+                    else ("FLAGGED" if regex_flagged else "APPROVED")
+                ),
+                "flagged": regex_flagged,
+                "recoupment_amount": regex_recoupment,
+                "net_received": regex_net,
+                "flags_count": len(regex_flags),
+                "summary": (
+                    "Rules missed novel wording; payment posted as clean cash."
+                    if diverged
+                    else ("Known pattern matched." if regex_flagged else "No rules triggered.")
+                ),
+            },
+            "with_moss": {
+                "status": "HOLD FOR REVIEW (FLAGGED IN 3ms)" if moss_flagged else "APPROVED",
+                "flagged": moss_flagged,
+                "recoupment_amount": moss_recoupment,
+                "net_received": moss_net,
+                "flags_count": len(self.flags),
+                "nearest_precedent": nearest_precedent,
+                "semantic_score": top_score,
+                "summary": (
+                    f"Novel wording mapped to precedent: '{nearest_precedent}'; payment held before posting."
+                    if diverged
+                    else ("Known pattern caught." if moss_flagged else "Clean EOB.")
+                ),
+            },
+            "divergence": {
+                "diverged": diverged,
+                "cash_at_risk_uncovered": cash_at_risk_uncovered,
+                "operational_outcome": (
+                    f"PREVENTED: ${cash_at_risk_uncovered:,.2f} clawback stopped before posting"
+                    if diverged
+                    else "Consistent verdict across rule and semantic engines."
+                ),
+            },
+        }
 
     def to_dict(self) -> dict:
         return {
             "filename": self.source_file,
             "claim_numbers": self.claim_numbers,
             "dates_of_service": self.dates_of_service,
+            # Convenience fields for a reviewer-facing case card. The full
+            # lists remain available above for multi-claim remittances.
+            "claim_number": ", ".join(self.claim_numbers) or None,
+            "date_of_service": ", ".join(self.dates_of_service) or None,
             "billed_amount": self.billed_amount,
             "paid_amount": self.paid_amount,
             "net_received": self.net_received,
             "flagged": bool(self.flags),
+            # UI-safe aliases make the recovery outcome explicit rather than
+            # asking clients to reconstruct money-at-risk from raw lines.
+            "has_recoupment": bool(self.flags),
+            "recoupment_amount": self.recoupment_amount,
+            "amount_flagged": self.recoupment_amount,
+            "recoupment_text": self.flags[0].line if self.flags else None,
+            "recovery_case": self.recovery_case,
+            "comparison": self.comparison,
             "flags": [
                 {
                     "line": f.line,
@@ -87,6 +228,9 @@ class _EOBResult:
                     "payer_tag": f.payer_tag,
                     "amounts_found": f.amounts_found,
                     "source": f.source,
+                    "semantic_score": f.semantic_score,
+                    "semantic_doc_id": f.semantic_doc_id,
+                    "semantic_learned": f.semantic_learned,
                 }
                 for f in self.flags
             ],
@@ -106,13 +250,55 @@ def _parse_money(token: str) -> float:
 
 
 def _extract_text_from_bytes(pdf_bytes: bytes) -> str:
-    """Extract plain text from PDF bytes using pdfplumber."""
-    chunks: List[str] = []
-    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text() or ""
-            chunks.append(text)
-    return "\n".join(chunks)
+    """Extract plain text from PDF bytes using pdfplumber with pure-python stream fallback."""
+    if _PDFPLUMBER_AVAILABLE:
+        try:
+            chunks: List[str] = []
+            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+                for page in pdf.pages:
+                    text = page.extract_text() or ""
+                    chunks.append(text)
+            extracted = "\n".join(chunks).strip()
+            if extracted:
+                return extracted
+        except Exception as exc:
+            logger.debug("pdfplumber extraction failed: %s", exc)
+
+    # Pure standard library fallback: extracts text from PDF content streams
+    # (handles ASCII85, FlateDecode, and direct text operands)
+    lines: List[str] = []
+    import base64
+    import zlib
+
+    stream_matches = list(
+        re.finditer(b"stream[\r\n]+(.*?)(?:endstream|endobj)", pdf_bytes, re.DOTALL)
+    )
+    for sm in stream_matches:
+        raw_stream = sm.group(1).strip()
+        decoded_bytes = None
+        if b"~>" in raw_stream:
+            chunk = raw_stream[:raw_stream.find(b"~>") + 2]
+            try:
+                decoded_bytes = base64.a85decode(chunk, adobe=True)
+            except Exception:
+                pass
+        if decoded_bytes is None:
+            decoded_bytes = raw_stream
+
+        decomp = None
+        for wbits in (15, -15, 31, 47):
+            try:
+                decomp = zlib.decompress(decoded_bytes, wbits).decode("latin1", errors="replace")
+                break
+            except Exception:
+                pass
+        if decomp is None:
+            decomp = decoded_bytes.decode("latin1", errors="replace")
+
+        for tm in re.finditer(r"\(([^)]*)\)\s*T[jJ]", decomp):
+            lines.append(tm.group(1))
+
+    return "\n".join(lines) if lines else pdf_bytes.decode("latin1", errors="replace")
 
 
 def _find_paid_and_billed(text: str) -> Tuple[Optional[float], Optional[float]]:
@@ -134,14 +320,34 @@ def _find_paid_and_billed(text: str) -> Tuple[Optional[float], Optional[float]]:
 
 
 def _find_recoupment_flags(
-    text: str, compiled: Dict[str, re.Pattern]
+    text: str, compiled: Dict[str, re.Pattern], matcher=None
 ) -> List[_Flag]:
+    """Detect known phrases, then use Moss only on regex-missed money lines.
+
+    The ordering is intentional: deterministic payer rules remain the first
+    line of defence, while Moss supplies recall for reworded offsets. A
+    disabled or warming matcher is a safe no-op, keeping the legacy path
+    available during cold starts.
+    """
     flags: List[_Flag] = []
-    for line in text.splitlines():
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        matched = False
+        amounts = [_parse_money(a) for a in MONEY_RE.findall(line)]
+        # ±1-line lookahead/lookbehind for amounts split across lines (common in multi-column tables):
+        if not amounts:
+            if i + 1 < len(lines):
+                next_amounts = [_parse_money(a) for a in MONEY_RE.findall(lines[i + 1])]
+                if next_amounts and len(_WORD_RE.findall(lines[i + 1])) <= 2:
+                    amounts = next_amounts
+            if not amounts and i > 0:
+                prev_amounts = [_parse_money(a) for a in MONEY_RE.findall(lines[i - 1])]
+                if prev_amounts and len(_WORD_RE.findall(lines[i - 1])) <= 2:
+                    amounts = prev_amounts
+
         for tag, regex in compiled.items():
             match = regex.search(line)
             if match:
-                amounts = [_parse_money(a) for a in MONEY_RE.findall(line)]
                 flags.append(
                     _Flag(
                         line=line.strip(),
@@ -151,7 +357,30 @@ def _find_recoupment_flags(
                         source="pattern",
                     )
                 )
+                matched = True
                 break  # one flag per line is enough
+
+        if matched or matcher is None or not getattr(matcher, "ready", False):
+            continue
+
+        # An actionable recovery case has a dollar value. This gate both avoids
+        # footer/prose false positives and keeps per-EOB query volume bounded.
+        if not amounts:
+            continue
+        hit = matcher.match(line)
+        if hit is not None:
+            flags.append(
+                _Flag(
+                    line=line.strip(),
+                    matched_phrase=hit.matched_text,
+                    payer_tag=hit.payer_tag,
+                    amounts_found=amounts,
+                    source="semantic",
+                    semantic_score=hit.score,
+                    semantic_doc_id=hit.matched_doc_id,
+                    semantic_learned=hit.learned,
+                )
+            )
     return flags
 
 
@@ -259,7 +488,16 @@ class RecoupmentService:
             )
 
         billed, paid = _find_paid_and_billed(text)
-        flags = _find_recoupment_flags(text, compiled)
+        # The optional import keeps raw PDF analysis usable on environments
+        # where Moss is intentionally unavailable. The matcher itself reports
+        # the fallback reason through /api/semantic/stats.
+        try:
+            from agents.semantic_matcher import get_matcher
+            matcher = get_matcher()
+        except Exception as exc:  # pragma: no cover - optional integration
+            logger.info("Semantic recall unavailable for %s: %s", filename, exc)
+            matcher = None
+        flags = _find_recoupment_flags(text, compiled, matcher=matcher)
         claim_numbers = CLAIM_NUM_RE.findall(text)
         dates = DOS_RE.findall(text)
 
@@ -336,10 +574,22 @@ class RecoupmentService:
                     "filename": filename,
                     "claim_numbers": [],
                     "dates_of_service": [],
+                    "claim_number": None,
+                    "date_of_service": None,
                     "billed_amount": None,
                     "paid_amount": None,
                     "net_received": None,
                     "flagged": False,
+                    "has_recoupment": False,
+                    "recoupment_amount": 0.0,
+                    "amount_flagged": 0.0,
+                    "recoupment_text": None,
+                    "recovery_case": {
+                        "decision": "UNAVAILABLE",
+                        "recovery_at_risk": 0.0,
+                        "recommended_action": "Analysis could not be completed; review the extraction warning.",
+                        "evidence_count": 0,
+                    },
                     "flags": [],
                     "extraction_warning": f"Unexpected error: {exc}",
                 }
