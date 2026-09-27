@@ -425,6 +425,11 @@
           <span style="font-size:12px; color:var(--muted);">Loading cases…</span>
         </div>
       </div>
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px; padding-top:14px; border-top:1px solid rgba(255,255,255,0.09);">
+        <button class="btn btn-primary" id="finale-flow-button" style="font-size:12px; padding:8px 13px;" onclick="startFinaleFlow(this)">▶ Start live finale flow</button>
+        <span style="font-size:11px; color:var(--muted);">Preflights the live retrieval engine, then runs the $3,240 counterfactual.</span>
+        <span id="finale-readiness" style="font-size:11px; color:var(--muted);"></span>
+      </div>
     </div>
 
     <div style="margin-bottom:20px">
@@ -1274,6 +1279,43 @@ async function runPreloadedDemo(caseId) {
     toast('Demo failed: ' + e.message, 'error');
   } finally {
     heroButtons.forEach(b => b.disabled = false);
+  }
+}
+
+// The finale uses one deterministic story, not a collection of dashboard
+// clicks.  Preflight first so the presenter can immediately disclose a
+// degraded dependency rather than accidentally attributing lexical fallback
+// results to Moss.
+async function startFinaleFlow(button) {
+  const statusEl = document.getElementById('finale-readiness');
+  button.disabled = true;
+  button.textContent = 'Running preflight…';
+  statusEl.textContent = '';
+  try {
+    const readiness = await api('/api/recoupment/finale-readiness');
+    const mossLive = readiness.moss && readiness.moss.live === true;
+    const assetReady = readiness.primary_case && readiness.primary_case.available === true;
+    const copilot = readiness.copilot && readiness.copilot.enabled === true;
+    const checks = [
+      `Moss ${mossLive ? 'live' : 'not live'}`,
+      assetReady ? 'counterfactual ready' : 'demo asset unavailable',
+      copilot ? 'de-identified copilot ready' : 'copilot optional/offline'
+    ];
+    statusEl.style.color = mossLive && assetReady ? 'var(--success)' : 'var(--warn)';
+    statusEl.textContent = checks.join(' · ');
+    if (!mossLive || !assetReady) {
+      toast('Preflight needs attention: ' + checks.join(' · '), 'warn', 6000);
+      return;
+    }
+    toast('Finale preflight passed. Running the live Moss counterfactual…', 'success', 2500);
+    await runPreloadedDemo('regional_reworded');
+  } catch (e) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = 'Preflight could not reach the API';
+    toast(e.message || 'Finale preflight failed.', 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = '▶ Start live finale flow';
   }
 }
 

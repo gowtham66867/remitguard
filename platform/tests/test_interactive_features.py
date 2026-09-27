@@ -14,6 +14,7 @@ from api.routes.recoupment import (
     ClassifyRequest,
     LearnRequest,
     classify_line,
+    finale_readiness,
     learn_phrase,
     run_live_eval,
 )
@@ -76,3 +77,14 @@ def test_interactive_live_eval_benchmark():
     assert res["hybrid_semantic"]["recall"] > res["regex_baseline"]["recall"]
     assert res["regex_baseline"]["precision"] > 95.0
     assert res["hybrid_semantic"]["precision"] > 90.0
+
+
+def test_finale_readiness_never_attributes_fallback_to_moss():
+    """The live-demo preflight must distinguish Moss from its safe fallback."""
+    res = finale_readiness()
+
+    assert res["primary_case"]["id"] == "regional_reworded"
+    assert res["primary_case"]["available"] is True
+    assert res["moss"]["live"] == (res["moss"]["engine"] == "moss_cloud")
+    assert "de-identified" in res["copilot"]["privacy"].lower()
+    assert len(res["runbook"]) == 4

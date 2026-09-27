@@ -648,6 +648,57 @@ def triage_workflow(req: WorkflowTriageRequest) -> dict:
     return result
 
 
+@router.get("/finale-readiness", summary="Verify the live-demo dependencies without exposing credentials")
+def finale_readiness() -> dict:
+    """Return a narrow, honest preflight for the six-minute live demonstration.
+
+    This is intentionally not a generic health endpoint.  It reports the three
+    claims a finalist is about to demonstrate: that the primary counterfactual
+    case is bundled, Moss is actually serving semantic retrieval (rather than
+    the lexical safety fallback), and the optional LLM copilot is configured.
+    Secret values and raw document content are never returned.
+    """
+    from agents.semantic_matcher import get_matcher
+
+    matcher = get_matcher()
+    semantic = matcher.stats() if matcher else {}
+    # `DEMO_CASES` is keyed by id; keep this lookup explicit so a missing
+    # primary case becomes a visible preflight failure instead of a crash.
+    primary = DEMO_CASES.get("regional_reworded")
+    _filename, primary_pdf = get_demo_pdf_bytes("regional_reworded")
+    guidance = get_recovery_guidance_service().status()
+
+    moss_live = bool(semantic.get("ready") and semantic.get("moss_connected"))
+    demo_available = bool(primary and primary_pdf)
+    copilot_ready = bool(guidance.get("enabled"))
+
+    return {
+        "status": "READY" if (moss_live and demo_available) else "ATTENTION_REQUIRED",
+        "primary_case": {
+            "id": "regional_reworded",
+            "available": demo_available,
+            "objective": "Prove that live Moss retrieval catches a reworded $3,240 payer offset that deterministic rules miss.",
+        },
+        "moss": {
+            "live": moss_live,
+            "engine": semantic.get("engine"),
+            "corpus_size": semantic.get("corpus_size", 0),
+            "fallback_reason": None if moss_live else semantic.get("fallback_reason") or semantic.get("disabled_reason"),
+        },
+        "copilot": {
+            "enabled": copilot_ready,
+            "model": guidance.get("model") if copilot_ready else None,
+            "privacy": "Only allowlisted, de-identified case metadata is sent to the optional copilot.",
+        },
+        "runbook": [
+            "Run the reworded-offset counterfactual.",
+            "Show the retrieval trace declining benign adjustment lines.",
+            "Open the human-review action and dispute packet.",
+            "Use the copilot only after the human decision, with de-identified metadata.",
+        ],
+    }
+
+
 @router.post("/semantic/run-eval", summary="Execute the 304-line held-out scientific benchmark live")
 @router.post("/run-eval", summary="Execute the 304-line held-out scientific benchmark live")
 def run_live_eval() -> dict:
